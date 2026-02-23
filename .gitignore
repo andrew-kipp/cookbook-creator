@@ -1,0 +1,12 @@
+# Ignore recipes folders and extracts
+All Recipes/
+*.paprikarecipes
+
+# Ignore Chat Session notes
+ChatSessions.txt
+
+# Ignore virtual environments and misc code
+NOT_USED/
+.venv/
+.vscode/
+temp_venv_activation.txt
