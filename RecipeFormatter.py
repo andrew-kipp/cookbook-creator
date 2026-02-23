@@ -42,9 +42,9 @@ def get_recipe_styles():
     info_style = ParagraphStyle(
         'RecipeInfo',
         parent=styles['Normal'],
-        fontSize=9,
+        fontSize=10,
         textColor='#555555',
-        spaceAfter=6,
+        spaceAfter=3,
         alignment=TA_LEFT,
         leftIndent=0
     )
@@ -53,7 +53,7 @@ def get_recipe_styles():
     source_style = ParagraphStyle(
         'RecipeSource',
         parent=styles['Normal'],
-        fontSize=9,
+        fontSize=10,
         textColor='#555555',
         spaceBefore=6,
         spaceAfter=3,
@@ -66,8 +66,8 @@ def get_recipe_styles():
         parent=styles['Heading2'],
         fontSize=12,
         textColor='#34495E',
-        spaceAfter=8,
-        spaceBefore=4,
+        spaceAfter=4,
+        spaceBefore=5,
         alignment=TA_CENTER
     )
     
@@ -75,22 +75,23 @@ def get_recipe_styles():
     ingredient_style = ParagraphStyle(
         'IngredientText',
         parent=styles['BodyText'],
-        fontSize=9,
+        fontSize=10,
         leading=9,
         spaceAfter=0,
         alignment=TA_LEFT,
-        leftIndent=0.1*inch
+        # leftIndent=0.05*inch,
+        rightIndent=0.1*inch
     )
     
     # Directions: similar tight leading to keep content compact
     direction_style = ParagraphStyle(
         'DirectionText',
         parent=styles['BodyText'],
-        fontSize=9,
+        fontSize=10,
         leading=12,
-        spaceAfter=6,
+        spaceAfter=2,
         alignment=TA_LEFT,
-        leftIndent=0.1*inch
+        leftIndent=0.15*inch
     )
     
     return {

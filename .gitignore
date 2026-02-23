@@ -9,4 +9,5 @@ ChatSessions.txt
 NOT_USED/
 .venv/
 .vscode/
+__pycache__/
 temp_venv_activation.txt
