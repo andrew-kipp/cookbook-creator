@@ -100,41 +100,43 @@ additional attempts to find an image file when the current function fails or has
 is a '403 Client Error' or 'Connection aborted' then retry. If the issue is a '404 Client Error' or the 
 retry failed then go to google images and find the first image when searching the recipe title.
 
+Examples:
 Failed to download image from https://lidiasitaly.com/wp-content/uploads/2015/07/Boiled-Zucchini-Salad-with-Tuna-resized2-e1529615034172-706x1024.jpg: 
    403 Client Error: Forbidden for url: https://lidiasitaly.com/wp-content/uploads/2015/07/Boiled-Zucchini-Salad-with-Tuna-resized2-e1529615034172-706x1024.jpg
-Failed to download image from https://www.feastingathome.com/wp-content/uploads/2017/06/Brazilian-Fish-Stew-23-683x1024.jpg: 
-   403 Client Error: Forbidden for url: https://www.feastingathome.com/wp-content/uploads/2017/06/Brazilian-Fish-Stew-23-683x1024.jpg
 Failed to download image from https://www.recipegirl.com/wp-content/uploads/2018/04/Ooey-Gooey-Flourless-Chocolate-Cookies-2-500x500.jpeg: 
    ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
-Failed to download image from https://sallysbakingaddiction.com/wp-content/uploads/2019/12/chocolate-swirled-meringue-cookies-150x225.jpg: 
-   403 Client Error: Forbidden for url: https://sallysbakingaddiction.com/wp-content/uploads/2019/12/chocolate-swirled-meringue-cookies-150x225.jpg
-Failed to download image from https://sallysbakingaddiction.com/wp-content/uploads/2017/03/homemade-biscuits-2-425x638.jpg: 
-   403 Client Error: Forbidden for url: https://sallysbakingaddiction.com/wp-content/uploads/2017/03/homemade-biscuits-2-425x638.jpg
-Failed to download image from https://inbloombakery.com/wp-content/uploads/2024/01/lemon-creme-brulee-cookies-2-5-150x188.jpg: 
-   403 Client Error: Forbidden for url: https://inbloombakery.com/wp-content/uploads/2024/01/lemon-creme-brulee-cookies-2-5-150x188.jpg
-Failed to download image from https://sallysbakingaddiction.com/wp-content/uploads/2016/03/lemon-curd-in-mason-jar-150x225.jpg: 
-   403 Client Error: Forbidden for url: https://sallysbakingaddiction.com/wp-content/uploads/2016/03/lemon-curd-in-mason-jar-150x225.jpg
 Failed to download image from https://www.pbs.org/food/wp-content/blogs.dir/2/files/2021/11/baked-rigatoni-and-zucchini-1920x1080-150x84.jpg: 
    404 Client Error: Not Found for url: https://www.pbs.org/food/wp-content/blogs.dir/2/files/2021/11/baked-rigatoni-and-zucchini-1920x1080-150x84.jpg
-Failed to download image from https://sallysbakingaddiction.com/wp-content/uploads/2019/08/maple-brown-sugar-cookies-500x750.jpg: 
-   403 Client Error: Forbidden for url: https://sallysbakingaddiction.com/wp-content/uploads/2019/08/maple-brown-sugar-cookies-500x750.jpg
-Failed to download image from https://sallysbakingaddiction.com/wp-content/uploads/2015/06/cornbread-3-150x225.jpg: 
-   403 Client Error: Forbidden for url: https://sallysbakingaddiction.com/wp-content/uploads/2015/06/cornbread-3-150x225.jpg
-Failed to download image from https://www.themediterraneandish.com/wp-content/uploads/2015/10/phyllo-meat-pie-recipe-11-150x225.jpg: 
-   403 Client Error: Forbidden for url: https://www.themediterraneandish.com/wp-content/uploads/2015/10/phyllo-meat-pie-recipe-11-150x225.jpg
-Failed to download image from https://sallysbakingaddiction.com/wp-content/uploads/2015/02/red-velvet-cake-recipe-4-500x750.jpg: 
-   403 Client Error: Forbidden for url: https://sallysbakingaddiction.com/wp-content/uploads/2015/02/red-velvet-cake-recipe-4-500x750.jpg
-Failed to download image from https://sallysbakingaddiction.com/wp-content/uploads/2013/05/snickerdoodles-recipe-5-425x638.jpg: 
-   403 Client Error: Forbidden for url: https://sallysbakingaddiction.com/wp-content/uploads/2013/05/snickerdoodles-recipe-5-425x638.jpg
-Failed to download image from https://thetasteedit.com/wp-content/uploads/2021/10/cookbook-Thali-Stir-Fried-Paner-and-Peppers-in-Kadhai-Marsalaphotocredit-Sam-A.-Harris-1080x1620.jpg: 
-   403 Client Error: Forbidden for url: https://thetasteedit.com/wp-content/uploads/2021/10/cookbook-Thali-Stir-Fried-Paner-and-Peppers-in-Kadhai-Marsalaphotocredit-Sam-A.-Harris-1080x1620.jpg
-Failed to download image from https://thewoksoflife.com/wp-content/uploads/2023/07/thai-beef-salad-11-110x150.jpg: 
-   403 Client Error: Forbidden for url: https://thewoksoflife.com/wp-content/uploads/2023/07/thai-beef-salad-11-110x150.jpg
-Failed to download image from https://dishingouthealth.com/wp-content/uploads/2025/09/TuscanButterBeanSoup_Styled1-400x600.jpg: 
-   403 Client Error: Forbidden for url: https://dishingouthealth.com/wp-content/uploads/2025/09/TuscanButterBeanSoup_Styled1-400x600.jpg
+
+
+Corrected an issue, but still having problems with the following recipes still missing images:
+Created PDF: Lidia’s Baked Fennel with Sage (0 Stars).pdf
+  Connection Error for https://www.pbs.org/food/wp-content/blogs.dir/2/files/2021/11/baked-rigatoni-and-zucchini-1920x1080-150x84.jpg: 
+  HTTPSConnectionPool(host='www.pbs.org', port=443): 
+  Max retries exceeded with url: /food/wp-content/blogs.dir/2/files/2021/11/baked-rigatoni-and-zucchini-1920x1080-150x84.jpg 
+  (Caused by SSLError(SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in 
+  violation of protocol (_ssl.c:1006)')))
+  Created PDF: Lidia’s Baked Rigatoni and Zucchini (0 Stars).pdf
+
+Connection aborted for https://aislinglarkin.ie/wp-content/uploads/2024/05/pistachio-tiramisu-.jpg, 
+retrying...
+  Retries failed for https://aislinglarkin.ie/wp-content/uploads/2024/05/pistachio-tiramisu-.jpg, 
+  searching Google Images...
+  Created PDF: Pistachio, Lemon & Raspberry Tiramisu (0 Stars).pdf
+
+Created PDF: Stir-Fried Ginger & Green Chili Prawns (0 Stars).pdf
+  403 Forbidden for https://thetasteedit.com/wp-content/uploads/2021/10/cookbook-Thali-Stir-Fried-Paner-and-Peppers-in-Kadhai-Marsalaphotocredit-Sam-A.-Harris-1080x1620.jpg, 
+  retrying...
+  Retries failed for https://thetasteedit.com/wp-content/uploads/2021/10/cookbook-Thali-Stir-Fried-Paner-and-Peppers-in-Kadhai-Marsalaphotocredit-Sam-A.-Harris-1080x1620.jpg, 
+  searching Google Images...
+  Created PDF: Stir-Fried Paneer & Peppers in a Kadhai Masala (0 Stars).pdf
+
+Set to now download the Google images thumbnail if the recipe image cannot be downloaded. This should 
+just be a temporary solution and corrected later.
 
 
 
+ToDo:
 
 The following new items need to be added:
 1. Please create a new python script which reverses the formatting of RecipeFormatter so that a json file 
@@ -153,10 +155,6 @@ The following new items need to be added:
       or 'New Recipes.paprikarecipes'.
 
 
-
-
-
-ToDo:
 Check formatting of Semo's Brownies, rewrite if necessary.
 May want to change the recipe PDF component so that it doesn't include the image, just keep it as the 
    formatted text.

@@ -34,6 +34,8 @@ import os
 from pathlib import Path
 import requests
 import time
+import re
+import sys
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate
 from RecipeFormatter import (
@@ -50,6 +52,40 @@ WORKSPACE_DIR = r"c:\Users\kippa\OneDrive\Documents\git-projects\cookbook-creato
 RECIPES_DIR = "All Recipes"
 IMAGES_SUBDIR = "Recipe Images"
 REVIEW_LIST_FILE = "recipes_needing_review.txt"
+
+# Fix encoding for Windows console
+sys.stdout.reconfigure(encoding='utf-8')
+
+def search_google_images(recipe_title):
+    """
+    Search Google Images for the recipe title and return the first image URL
+    """
+    # Clean and shorten the title
+    cleaned_title = re.sub(r'[^\w\s]', '', recipe_title).strip()
+    query = cleaned_title.replace(' ', '+')[:50]
+    url = f"https://www.google.com/search?q={query}&tbm=isch"
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Referer': 'https://www.google.com/'
+    }
+    try:
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+        # Find image URLs using regex
+        img_urls = re.findall(r'"ou\\":\\"([^"]+)"', response.text)
+        if not img_urls:
+            img_urls = re.findall(r'"ou":"([^"]+)"', response.text)
+        if not img_urls:
+            # Fallback to img src thumbnails
+            img_urls = re.findall(r'src="([^"]+)"', response.text)
+            img_urls = [u for u in img_urls if u.startswith('http') and not u.startswith('data:')]
+        if img_urls:
+            return img_urls[0]
+        else:
+            print(f"  No image URLs found in Google search for '{cleaned_title}'")
+    except Exception as e:
+        print(f"  Failed to search Google Images for '{cleaned_title}': {e}")
+    return None
 
 def check_review_list_exists():
     """Check if recipes_needing_review.txt exists and alert user"""
@@ -91,31 +127,33 @@ def create_images_folder():
 def download_recipe_image(image_url, recipe_name, images_folder, rating=None):
     """
     Download image from URL and save with recipe name
+    Includes retries for 403/Connection aborted and fallback to Google Images for 404
     Returns the local path to the image if successful, None otherwise
     """
     if not image_url or not image_url.strip():
         return None
     
-    try:
-        # Create a safe filename from recipe name
-        safe_name = "".join(c for c in recipe_name if c.isalnum() or c in (' ', '_', '-'))
-        safe_name = safe_name.strip()
-        
-        # Download the image
-        response = requests.get(image_url, timeout=10)
-        response.raise_for_status()
-        
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    }
+    
+    # Create a safe filename from recipe name
+    safe_name = "".join(c for c in recipe_name if c.isalnum() or c in (' ', '_', '-'))
+    safe_name = safe_name.strip()
+    
+    # Append rating in parentheses if provided: e.g., " (5 stars)"
+    suffix = f" ({rating} stars)" if rating not in (None, '') else ""
+    
+    def save_image(response, url):
         # Determine image extension from content-type or URL
         content_type = response.headers.get('content-type', '')
-        if 'jpeg' in content_type or 'jpg' in content_type or image_url.endswith('.jpg'):
+        if 'jpeg' in content_type or 'jpg' in content_type or url.endswith('.jpg'):
             extension = '.jpg'
-        elif 'png' in content_type or image_url.endswith('.png'):
+        elif 'png' in content_type or url.endswith('.png'):
             extension = '.png'
         else:
             extension = '.jpg'  # Default to jpg
         
-        # Append rating in parentheses if provided: e.g., " (5 rating)"
-        suffix = f" ({rating} stars)" if rating not in (None, '') else ""
         # Save image
         image_path = os.path.join(images_folder, f"{safe_name}{suffix}{extension}")
         with open(image_path, 'wb') as f:
@@ -123,6 +161,108 @@ def download_recipe_image(image_url, recipe_name, images_folder, rating=None):
         
         print(f"  Downloaded image: {os.path.basename(image_path)}")
         return image_path
+    
+    # Try initial download
+    try:
+        response = requests.get(image_url, headers=headers, timeout=10)
+        response.raise_for_status()
+        if 'image' not in response.headers.get('content-type', '').lower():
+            print(f"  URL does not point to an image: {image_url}")
+            return None
+        return save_image(response, image_url)
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code == 403:
+            print(f"  403 Forbidden for {image_url}, retrying...")
+            # Retry up to 3 times with delay
+            for attempt in range(3):
+                try:
+                    time.sleep(2)  # Wait 2 seconds
+                    response = requests.get(image_url, headers=headers, timeout=10)
+                    response.raise_for_status()
+                    if 'image' not in response.headers.get('content-type', '').lower():
+                        print(f"  URL does not point to an image: {image_url}")
+                        continue
+                    return save_image(response, image_url)
+                except Exception:
+                    continue
+            # If retries fail, fallback to Google Images
+            print(f"  Retries failed for {image_url}, searching Google Images...")
+            alt_url = search_google_images(recipe_name)
+            if alt_url:
+                try:
+                    response = requests.get(alt_url, headers=headers, timeout=10)
+                    response.raise_for_status()
+                    if 'image' not in response.headers.get('content-type', '').lower():
+                        print(f"  Google result is not an image: {alt_url}")
+                        return None
+                    return save_image(response, alt_url)
+                except Exception as e2:
+                    print(f"  Failed to download from Google Images: {e2}")
+            return None
+        elif e.response.status_code == 404:
+            print(f"  404 Not Found for {image_url}, searching Google Images...")
+            alt_url = search_google_images(recipe_name)
+            if alt_url:
+                try:
+                    response = requests.get(alt_url, headers=headers, timeout=10)
+                    response.raise_for_status()
+                    if 'image' not in response.headers.get('content-type', '').lower():
+                        print(f"  Google result is not an image: {alt_url}")
+                        return None
+                    return save_image(response, alt_url)
+                except Exception as e2:
+                    print(f"  Failed to download from Google Images: {e2}")
+            return None
+        else:
+            print(f"  HTTP Error for {image_url}: {e}")
+            return None
+    except requests.exceptions.ConnectionError as e:
+        if 'Connection aborted' in str(e):
+            print(f"  Connection aborted for {image_url}, retrying...")
+            # Retry up to 3 times
+            for attempt in range(3):
+                try:
+                    time.sleep(2)
+                    response = requests.get(image_url, headers=headers, timeout=10)
+                    response.raise_for_status()
+                    if 'image' not in response.headers.get('content-type', '').lower():
+                        print(f"  URL does not point to an image: {image_url}")
+                        continue
+                    return save_image(response, image_url)
+                except Exception:
+                    continue
+            # If retries fail, fallback to Google Images
+            print(f"  Retries failed for {image_url}, searching Google Images...")
+            alt_url = search_google_images(recipe_name)
+            if alt_url:
+                try:
+                    response = requests.get(alt_url, headers=headers, timeout=10)
+                    response.raise_for_status()
+                    if 'image' not in response.headers.get('content-type', '').lower():
+                        print(f"  Google result is not an image: {alt_url}")
+                        return None
+                    return save_image(response, alt_url)
+                except Exception as e2:
+                    print(f"  Failed to download from Google Images: {e2}")
+            return None
+        else:
+            print(f"  Connection Error for {image_url}: {e}")
+            return None
+    except requests.exceptions.SSLError as e:
+        print(f"  SSL Error for {image_url}: {e}")
+        # Fallback to Google Images
+        alt_url = search_google_images(recipe_name)
+        if alt_url:
+            try:
+                response = requests.get(alt_url, headers=headers, timeout=10)
+                response.raise_for_status()
+                if 'image' not in response.headers.get('content-type', '').lower():
+                    print(f"  Google result is not an image: {alt_url}")
+                    return None
+                return save_image(response, alt_url)
+            except Exception as e2:
+                print(f"  Failed to download from Google Images: {e2}")
+        return None
     except Exception as e:
         print(f"  Failed to download image from {image_url}: {e}")
         return None
