@@ -1,0 +1,188 @@
+*** Using Ask mode for the following statements and manually creating/updating the files.
+
+I need to create a for converting files, unzipping them, and then parsing the final nested files.
+
+The file ending in 'All Recipes.paprikarecipes" needs to have its extension changed to be '.zip' 
+and then all the files extracted to a folder called 'All Recipes'.
+The extracted files are expected to have the extension '.paprikarecipe', but these should be 
+changed to be '.gz' There should be no issue changing the file type because they are identical. 
+Once all file extensions have been changed to '.gz', extract the contents and put them in the 
+folder called 'All Recipes'
+
+The final extracted files in 'All Recipes' should be converted to json files. Please update the 
+code to do this.
+
+
+Please create a new script that creates a cooking recipe from each json file and save the recipe as 
+a pdf with the same name as the json file. The recipe should be saved in the 'All Recipes' folder.
+
+Additionally, please create a sub folder in the 'All Recipes' folder called 'Recipe Images'. When 
+parsing the json files to create the recipe files, if the 'image_url' value is not empty, please 
+download the image from that url and save it as the same name as the recipe.
+
+
+Next steps:
+1. Need to update the PaprikaExtract file to address the case when the 'All Recipes' folder already 
+   exists. 
+   - If the folder does not exist then use the code as it already is. 
+   - Else if the folder does exist, then check if each recipe already exists in the folder.
+        - If the new recipe file does not already exist then save it.
+        - If the recipe already exists and the new recipe is not different then continue to 
+          the next recipe.
+        - If the new recipe is different than the existing recipe then save the new recipe with a 
+          '(2)' at the end of the file name.
+
+   Do the same checks with the recipe images.
+
+   Once this is complete, create a .txt file with the list of the recipes with '(2)' at the end of 
+   the file name. These are the recipes which need to be reviewed.
+
+2. Change the recipe formatting of JSONToPDFRecipe.py recipe so that it is formatted neater and move 
+   the formatting part to another file so that it can be used as a recipe formatting template. The 
+   JSONToPDFRecipe.py file should call the recipe format file or function when doing the formatting.
+    a. Set the page border margins to 0.5 inches
+    b. The title should be at the top left of the recipe page
+    c. The recipe overview info (prep time, cook time, servings, etc.) should be listed just 
+       below the title
+    d. Break the page into two sections, the left side of the page should be 30% of the available 
+       space and the right side of the page should be 70% of the available space
+    e. Place the ingredients list in the space created on the left side of the page, but only fill 
+       that space to 85% of its width. Center the text in that space.
+    f. Place the directions in the space created on right side of the page, but on the fill the 
+       space to 85% of its width. Center the text in that space.
+    g. Place a vartical line between the ingredients and the recipe directions. Make it only the 
+       vertical length of the ingredients list.
+    h. Place the image on the second page.
+
+Please update the JSONToPDFRecipe script to have a conditional at the start to prevent the script from 
+running if 'recipes_needing_review.txt' file exists.
+
+Also add a conditional to the script so that it skips any json files where the date modified value of 
+the pdf file is the same as the json file. Don't want to reprocess json files which were not updated.
+
+Please increase the tolerance for rounding differences from 1-second to 10-minutes.
+
+
+
+*** Using Agent mode for the below sections.
+
+In the RecipeFormatter file the following changes should be made.
+1. The vertical line which should be separating the ingredients from the directions is just a horizontal 
+   line after the ingredients sections. Please correct this so that there is a vertical line separating 
+   the ingredients and directions sections. 
+2. Additionally, please change the formatting for the whole page so that the margins are 0.5 inches. It 
+   currently looks like the base formatting is 1 inch on the left and right margins.
+3. For the ingredients section, please make the ingredients text left-hand formatted rather than center 
+   formatted. Also change the ingredient spacing to be single-spaced rather than double-spaced.
+4. Please change the 'Source' line to be 1.5 spaced from the 'Servings' line, rather than double-spaced.
+5. Please change the 'Notes' section to have the same formatting as the 'Directions' section and place it 
+   beneath the 'Directions' section, rather than on the next page.
+6. Reduce the line spacing between the 'Source' line and the 'Ingredients'/'Directions' sections by half.
+7. Move the 'Nutritional Information' section to be beneath the 'Ingredients'/'Directions' sections and 
+   change the information in the section so that it is all listed in one line if it is not already 
+   formatted that way.
+8. Change the pdf and image file naming scheme so that the names end with ' (X Stars)' where 'X' is the 
+   value of the 'rating' key in the json file.
+
+
+Additional Adjustments:
+1. In the formatting, remove all margin specifications from sections which are not the 'Ingredients' and 
+   'Directions' sections. 
+2. Also, since the Nutritional Information is listed below the recipe there is no need to also have a 
+   'Nutritional Information' section below the recipe image.
+3. And, move the 'Notes' section so that it is listed in the same column below the 'Directions' section.
+
+Made further formatting adjustments.
+
+
+Need to update the JSONToPDFRecipe.py file so that it checks if the image was retrieved and makes 
+additional attempts to find an image file when the current function fails or has an error. If the issue 
+is a '403 Client Error' or 'Connection aborted' then retry. If the issue is a '404 Client Error' or the 
+retry failed then go to google images and find the first image when searching the recipe title.
+
+Failed to download image from https://lidiasitaly.com/wp-content/uploads/2015/07/Boiled-Zucchini-Salad-with-Tuna-resized2-e1529615034172-706x1024.jpg: 
+   403 Client Error: Forbidden for url: https://lidiasitaly.com/wp-content/uploads/2015/07/Boiled-Zucchini-Salad-with-Tuna-resized2-e1529615034172-706x1024.jpg
+Failed to download image from https://www.feastingathome.com/wp-content/uploads/2017/06/Brazilian-Fish-Stew-23-683x1024.jpg: 
+   403 Client Error: Forbidden for url: https://www.feastingathome.com/wp-content/uploads/2017/06/Brazilian-Fish-Stew-23-683x1024.jpg
+Failed to download image from https://www.recipegirl.com/wp-content/uploads/2018/04/Ooey-Gooey-Flourless-Chocolate-Cookies-2-500x500.jpeg: 
+   ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+Failed to download image from https://sallysbakingaddiction.com/wp-content/uploads/2019/12/chocolate-swirled-meringue-cookies-150x225.jpg: 
+   403 Client Error: Forbidden for url: https://sallysbakingaddiction.com/wp-content/uploads/2019/12/chocolate-swirled-meringue-cookies-150x225.jpg
+Failed to download image from https://sallysbakingaddiction.com/wp-content/uploads/2017/03/homemade-biscuits-2-425x638.jpg: 
+   403 Client Error: Forbidden for url: https://sallysbakingaddiction.com/wp-content/uploads/2017/03/homemade-biscuits-2-425x638.jpg
+Failed to download image from https://inbloombakery.com/wp-content/uploads/2024/01/lemon-creme-brulee-cookies-2-5-150x188.jpg: 
+   403 Client Error: Forbidden for url: https://inbloombakery.com/wp-content/uploads/2024/01/lemon-creme-brulee-cookies-2-5-150x188.jpg
+Failed to download image from https://sallysbakingaddiction.com/wp-content/uploads/2016/03/lemon-curd-in-mason-jar-150x225.jpg: 
+   403 Client Error: Forbidden for url: https://sallysbakingaddiction.com/wp-content/uploads/2016/03/lemon-curd-in-mason-jar-150x225.jpg
+Failed to download image from https://www.pbs.org/food/wp-content/blogs.dir/2/files/2021/11/baked-rigatoni-and-zucchini-1920x1080-150x84.jpg: 
+   404 Client Error: Not Found for url: https://www.pbs.org/food/wp-content/blogs.dir/2/files/2021/11/baked-rigatoni-and-zucchini-1920x1080-150x84.jpg
+Failed to download image from https://sallysbakingaddiction.com/wp-content/uploads/2019/08/maple-brown-sugar-cookies-500x750.jpg: 
+   403 Client Error: Forbidden for url: https://sallysbakingaddiction.com/wp-content/uploads/2019/08/maple-brown-sugar-cookies-500x750.jpg
+Failed to download image from https://sallysbakingaddiction.com/wp-content/uploads/2015/06/cornbread-3-150x225.jpg: 
+   403 Client Error: Forbidden for url: https://sallysbakingaddiction.com/wp-content/uploads/2015/06/cornbread-3-150x225.jpg
+Failed to download image from https://www.themediterraneandish.com/wp-content/uploads/2015/10/phyllo-meat-pie-recipe-11-150x225.jpg: 
+   403 Client Error: Forbidden for url: https://www.themediterraneandish.com/wp-content/uploads/2015/10/phyllo-meat-pie-recipe-11-150x225.jpg
+Failed to download image from https://sallysbakingaddiction.com/wp-content/uploads/2015/02/red-velvet-cake-recipe-4-500x750.jpg: 
+   403 Client Error: Forbidden for url: https://sallysbakingaddiction.com/wp-content/uploads/2015/02/red-velvet-cake-recipe-4-500x750.jpg
+Failed to download image from https://sallysbakingaddiction.com/wp-content/uploads/2013/05/snickerdoodles-recipe-5-425x638.jpg: 
+   403 Client Error: Forbidden for url: https://sallysbakingaddiction.com/wp-content/uploads/2013/05/snickerdoodles-recipe-5-425x638.jpg
+Failed to download image from https://thetasteedit.com/wp-content/uploads/2021/10/cookbook-Thali-Stir-Fried-Paner-and-Peppers-in-Kadhai-Marsalaphotocredit-Sam-A.-Harris-1080x1620.jpg: 
+   403 Client Error: Forbidden for url: https://thetasteedit.com/wp-content/uploads/2021/10/cookbook-Thali-Stir-Fried-Paner-and-Peppers-in-Kadhai-Marsalaphotocredit-Sam-A.-Harris-1080x1620.jpg
+Failed to download image from https://thewoksoflife.com/wp-content/uploads/2023/07/thai-beef-salad-11-110x150.jpg: 
+   403 Client Error: Forbidden for url: https://thewoksoflife.com/wp-content/uploads/2023/07/thai-beef-salad-11-110x150.jpg
+Failed to download image from https://dishingouthealth.com/wp-content/uploads/2025/09/TuscanButterBeanSoup_Styled1-400x600.jpg: 
+   403 Client Error: Forbidden for url: https://dishingouthealth.com/wp-content/uploads/2025/09/TuscanButterBeanSoup_Styled1-400x600.jpg
+
+
+
+
+The following new items need to be added:
+1. Please create a new python script which reverses the formatting of RecipeFormatter so that a json file 
+   can be created from a pdf recipe file. The resulting json file should include the same key information 
+   as the json files already in the All Recipes folder.
+2. Create a new folder inside cookbook-creator called 'Paprika Recipes to Import'.
+3. Create a new python script that does the following:
+   a. Looks at the pdf files in the All Recipes folder and determines which pdfs do not have a json file 
+      with the same name and then creates the json file using the script created in step 1. 
+   b. Delete any files in 'Paprika Recipes to Import'. 
+   c. Create a copy of the json files and associated recipe images, created in step 3a, and put them in 
+      'Paprika Recipes to Import'. 
+   c. gzip each json file in 'Paprika Recipes to Import' and change the extension to '.paprikarecipe'. Then
+      combine all '.paprikarecipe' files into one zip file called 'New Recipes' and change the extension to 
+      '.paprikarecipes'. Then delete any files in 'Paprika Recipes to Import' which are not an image file 
+      or 'New Recipes.paprikarecipes'.
+
+
+
+
+
+ToDo:
+Check formatting of Semo's Brownies, rewrite if necessary.
+May want to change the recipe PDF component so that it doesn't include the image, just keep it as the 
+   formatted text.
+Want to pretty-up the formatting of the recipe without messing with the page sizing and spacing too much.
+Images will only be used in the single PDF output for a cookbook.
+
+Once the basics are covered, turn this into a software package someone can execute on their computer. It 
+   should have a very simple gui allowing the user to do the following things:
+   1. Add a title: 'Recipe and Cookbook Creator'. Add a subtitle: 'For for use with individual recipe 
+      screenshots and Paprika Recipe Manager 3 recipe files'.
+   1. Add a designated space to drag-and-drop files into, or select from the files system. The software 
+      should then list the files that it received and have a clickable button below the list to 
+      clear it and return to the drag-and-drop view so that the user can select or add new files.
+   1. Add some text, spaced a little below step 1, which 
+   2. There should be a single line box below, containing the temporary text: 'Select destination folder'. 
+      This box should be clickable so that the user can select the file system folder they want to use for 
+      storing the parsed recipes.
+   3. Add a clickable button, next to the box in step 2, which has text: 'Create recipe pdf files'. This button 
+      should then determine the file types in step 1, determine how to extract them, and convert them to PDF. 
+      For now this should be able to handle '.paprikarecipe' and '.paprikarecipes' files, but eventually it 
+      should be able to handle image files as well. It should use the PaprikaExtract.py script and then the 
+      JSONToPDFRecipe.py script create the recipe files. This button should only be clickable if there is a 
+      path specified in the box in step 2.
+      a. The PaprikaExtract.py and JSONToPDFRecipe.py scripts need to be updated to receive the folder path 
+         specified in step 2 and use it rather than the current folder called 'All Recipes'.
+      b. The PaprikaExtract.py script needs to be updated so that it can loop through the files in step 1, 
+         handling individual recipes ('.paprikarecipe') and batch recipe extracts ('.paprikarecipes'). 
+         Currently it can only handle a single '.paprikarecipes' file.
+   4. Add a clickable button, next to the box in step 3, which has text: 'Create recipe json files'.
