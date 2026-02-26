@@ -135,9 +135,6 @@ Set to now download the Google images thumbnail if the recipe image cannot be do
 just be a temporary solution and corrected later.
 
 
-
-ToDo:
-
 The following new items need to be added:
 1. Please create a new python script which reverses the formatting of RecipeFormatter so that a json file 
    can be created from a pdf recipe file. The resulting json file should include the same key information 
@@ -155,6 +152,8 @@ The following new items need to be added:
       or 'New Recipes.paprikarecipes'.
 
 
+
+ToDo:
 Check formatting of Semo's Brownies, rewrite if necessary.
 May want to change the recipe PDF component so that it doesn't include the image, just keep it as the 
    formatted text.

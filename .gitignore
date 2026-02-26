@@ -1,9 +1,8 @@
 # Ignore recipes folders and extracts
 All Recipes/
 *.paprikarecipes
-
-# Ignore Chat Session notes
-ChatSessions.txt
+.claude/
+Paprika Recipes to Import/
 
 # Ignore virtual environments and misc code
 NOT_USED/
