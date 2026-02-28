@@ -305,23 +305,22 @@ def create_pdf_recipe(json_file, recipes_folder, images_folder):
         story = []
         
         # First page: Recipe info, ingredients, and directions
-        first_page_result = format_recipe_first_page(recipe_data, styles)
-        # format_recipe_first_page may return (elements, overflow_ingredients)
-        if isinstance(first_page_result, tuple):
-            first_page_elements, overflow_ingredients = first_page_result
-        else:
-            first_page_elements = first_page_result
-            overflow_ingredients = []
+        # Returns (elements, overflow_ingredients, overflow_right, has_overflow_directions)
+        first_page_elements, overflow_ingredients, overflow_right, overflow_directions_count = \
+            format_recipe_first_page(recipe_data, styles)
         story.extend(first_page_elements)
-        
+
         # Try to download image for second page (use same naming scheme with rating suffix)
         image_url = recipe_data.get('image_url', '')
         image_path = None
         if image_url:
             image_path = download_recipe_image(image_url, recipe_name, images_folder, rating)
-        
-        # Second page: include any overflow ingredients then image, nutritional info, and notes
-        story.extend(format_recipe_second_page(recipe_data, image_path, styles, overflow_ingredients))
+
+        # Second page: overflow content (two-column, paginated) then image
+        story.extend(format_recipe_second_page(
+            recipe_data, image_path, styles,
+            overflow_ingredients, overflow_right, overflow_directions_count,
+        ))
         
         # Build PDF
         doc.build(story)

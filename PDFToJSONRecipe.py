@@ -279,14 +279,17 @@ def _parse_directions_and_notes(right_rows):
 
 
 def _parse_nutritional_info(nutr_spans):
-    """Join all nutritional info spans into a single string."""
+    """Join all nutritional info spans into a single string.
+    RecipeFormatter joins nutritional items with ' | ' for display; strip those back to spaces."""
     if not nutr_spans:
         return ''
     nutr_spans = sorted(nutr_spans, key=lambda s: (s['y0'], s['x0']))
     # Group by y-line to preserve structure
     rows = _group_spans_by_y(nutr_spans)
     lines = [' '.join(s['text'] for s in row) for row in rows.values()]
-    return ' '.join(lines).strip()
+    result = ' '.join(lines)
+    result = re.sub(r'\s*\|\s*', ' ', result).strip()
+    return result
 
 
 def pdf_to_json(pdf_path):
@@ -331,19 +334,60 @@ def pdf_to_json(pdf_path):
     # ── Parse columns ───────────────────────────────────────────────────────
     left_spans, right_rows, nutr_spans = _parse_columns(table_rows)
 
-    # ── Check page 2+ for overflow ingredients ──────────────────────────────
+    # ── Check page 2+ for overflow content (ingredients + directions/notes) ──
+    # Section headings and continuation headings that should be skipped
+    OVERFLOW_SKIP_HEADINGS = {
+        'Ingredients (continued)', 'Directions (continued)', 'Directions', 'Ingredients'
+    }
+    # Track whether we've entered the nutritional info section on an overflow page
+    in_nutr_overflow = False
+    next_right_y = max(right_rows.keys(), default=0) + 100000  # offset for page-2+ right rows
+
     for page_num in range(1, doc.page_count):
         extra_page = doc[page_num]
         extra_spans = _extract_spans(extra_page)
         if not extra_spans:
             continue
-        # Only collect ingredient spans from overflow pages
-        for s in extra_spans:
-            heading_text = s['text'].strip()
-            if s['bold'] and heading_text in ('Ingredients (continued)',):
-                continue
-            if s['x0'] < COLUMN_SPLIT_X and not _is_section_heading(s):
-                left_spans.append(s)
+        extra_rows = _group_spans_by_y(extra_spans)
+        for y, row in extra_rows.items():
+            # Check for nutritional info marker (can appear on overflow pages)
+            if not in_nutr_overflow:
+                for s in row:
+                    if s['bold'] and 'Nutritional Information:' in s['text']:
+                        in_nutr_overflow = True
+                        break
+            if in_nutr_overflow:
+                # Exit nutr mode when we reach the overflow table section headings
+                hit_section = any(
+                    s['bold'] and s['text'].strip() in OVERFLOW_SKIP_HEADINGS
+                    for s in row
+                )
+                if hit_section:
+                    in_nutr_overflow = False
+                else:
+                    # Only collect left-column spans; right column can't be nutr info
+                    for s in row:
+                        if (not (s['bold'] and 'Nutritional Information:' in s['text'])
+                                and s['x0'] < COLUMN_SPLIT_X):
+                            nutr_spans.append(s)
+                    continue
+
+            for s in row:
+                heading_text = s['text'].strip()
+                # Skip known section/continuation headings
+                if s['bold'] and heading_text in OVERFLOW_SKIP_HEADINGS:
+                    continue
+                if _is_section_heading(s):
+                    continue
+                if s['x0'] < COLUMN_SPLIT_X:
+                    left_spans.append(s)
+                else:
+                    # Right column overflow: append with page-offset y to preserve order
+                    right_rows[next_right_y] = right_rows.get(next_right_y, [])
+                    right_rows[next_right_y].append(s)
+                    next_right_y += 1
+
+    right_rows = dict(sorted(right_rows.items()))
 
     # ── Parse sections ──────────────────────────────────────────────────────
     ingredients = _parse_ingredients(left_spans)

@@ -236,16 +236,15 @@ def main():
     
     # Step 4: Convert extracted files to JSON
     print(f"\nStep 4: Converting files to JSON format")
-    
+
+    import re as _re
     extracted_files = list(Path(OUTPUT_DIR).glob("*"))
     for extracted_file in extracted_files:
         if extracted_file.is_file() and not extracted_file.name.endswith('.json'):
-            json_output = extracted_file.with_suffix(".json")
-            
             try:
                 with open(extracted_file, 'r', encoding='utf-8') as f:
                     content = f.read()
-                
+
                 # Parse as XML or JSON
                 try:
                     root = ET.fromstring(content)
@@ -255,13 +254,28 @@ def main():
                         json_data = json.loads(content)
                     except json.JSONDecodeError:
                         json_data = {"content": content}
-                
+
+                # Derive output filename from the recipe's 'name' field so that
+                # special characters (accented letters, curly quotes, en-dashes)
+                # in the recipe name are preserved correctly in the filename.
+                # shutil.unpack_archive decodes zip entry names as CP437 when the
+                # UTF-8 flag is absent, producing garbled stems like "Alb├│ndigas"
+                # instead of "Albóndigas".  Using the parsed name avoids this.
+                recipe_name = json_data.get('name', '').strip() if isinstance(json_data, dict) else ''
+                if recipe_name:
+                    # Strip characters that are illegal in Windows filenames
+                    safe_name = _re.sub(r'[<>:"/\\|?*]', '', recipe_name).strip()
+                    json_output = Path(OUTPUT_DIR) / (safe_name + '.json')
+                else:
+                    # Fallback: use the stem of the extracted file as before
+                    json_output = extracted_file.with_suffix('.json')
+
                 # Save with duplicate handling
                 if save_json_recipe(json_data, str(json_output), recipes_needing_review):
                     print(f"  Converted: {extracted_file.name} -> {json_output.name}")
                 else:
                     print(f"  Skipped (identical): {extracted_file.name}")
-                
+
                 # Remove the original extracted file
                 os.remove(str(extracted_file))
             except Exception as e:

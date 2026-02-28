@@ -152,6 +152,26 @@ The following new items need to be added:
       or 'New Recipes.paprikarecipes'.
 
 
+While we had a good start in our previous conversation, you need to treat yourself as a senior developer and 
+not constantly ask me for permission to run bash commands. You have permission.
+
+For the next step I have updated the All Recipes folder to have many more PDF files. Can you please run the 
+PDFToJSONRecipe script on all the files in All Recipes to test whether the output matches the json files? 
+And if the output json files do not match the existing json files, please suggest a plan for how to update 
+the script to address the issues.
+
+
+Thanks for the plan. 
+
+For Root Cause 1 please execute the suggested solution. 
+For Root Cause 2 please change the RecipeFormatter so that the ingredients and directions sections continue 
+with the same formatting as page 1 when extended to page 2. This way there is no break in continuity. Once 
+completed please let me know so I can regenerate the PDF files so that you can retest.
+
+Please hold off on executing fixes for 3 and 4
+
+
+
 
 ToDo:
 Check formatting of Semo's Brownies, rewrite if necessary.
