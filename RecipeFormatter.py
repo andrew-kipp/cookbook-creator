@@ -330,10 +330,11 @@ def format_recipe_first_page(recipe_data, styles):
 def format_recipe_second_page(recipe_data, image_path, styles,
                               overflow_ingredients=None,
                               overflow_right=None,
-                              overflow_directions_count=0):
+                              overflow_directions_count=0,
+                              include_image=False):
     """
     Format page 2 (and any additional pages) with overflow content from page 1
-    in a matching two-column layout, followed by the recipe image.
+    in a matching two-column layout, optionally followed by the recipe image.
 
     Both columns are measured independently using actual Table.wrap() binary search
     so no table cell can exceed the frame height.
@@ -344,6 +345,8 @@ def format_recipe_second_page(recipe_data, image_path, styles,
                                 direction steps (remainder are notes, which carry their
                                 own 'Notes' heading).  Used to decide when to add a
                                 'Directions (continued)' heading on overflow pages.
+    include_image             – If True and image_path exists, append the image after
+                                overflow content.  Defaults to False.
     """
     elements = []
     elements.append(PageBreak())
@@ -444,7 +447,7 @@ def format_recipe_second_page(recipe_data, image_path, styles,
             elements.append(PageBreak())
 
     # ── Recipe image ─────────────────────────────────────────────────────────
-    if image_path and os.path.exists(image_path):
+    if include_image and image_path and os.path.exists(image_path):
         try:
             elements.append(Spacer(1, 0.3 * inch))
             img = Image(image_path, width=5 * inch, height=3 * inch)

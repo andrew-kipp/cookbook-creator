@@ -52,6 +52,7 @@ WORKSPACE_DIR = r"c:\Users\kippa\OneDrive\Documents\git-projects\cookbook-creato
 RECIPES_DIR = "All Recipes"
 IMAGES_SUBDIR = "Recipe Images"
 REVIEW_LIST_FILE = "recipes_needing_review.txt"
+INCLUDE_IMAGES = False  # Set to True to download and embed recipe images in PDFs
 
 # Fix encoding for Windows console
 sys.stdout.reconfigure(encoding='utf-8')
@@ -310,16 +311,17 @@ def create_pdf_recipe(json_file, recipes_folder, images_folder):
             format_recipe_first_page(recipe_data, styles)
         story.extend(first_page_elements)
 
-        # Try to download image for second page (use same naming scheme with rating suffix)
+        # Always download the image if a URL is available; embedding is controlled separately
         image_url = recipe_data.get('image_url', '')
         image_path = None
         if image_url:
             image_path = download_recipe_image(image_url, recipe_name, images_folder, rating)
 
-        # Second page: overflow content (two-column, paginated) then image
+        # Second page: overflow content (two-column, paginated) then optional image
         story.extend(format_recipe_second_page(
             recipe_data, image_path, styles,
             overflow_ingredients, overflow_right, overflow_directions_count,
+            include_image=INCLUDE_IMAGES,
         ))
         
         # Build PDF
