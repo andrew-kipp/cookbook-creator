@@ -20,7 +20,7 @@ from pathlib import Path
 
 # Configuration
 WORKSPACE_DIR = r"c:\Users\kippa\OneDrive\Documents\git-projects\cookbook-creator"
-SOURCE_FILE = "Export 2026-01-13 15.07.45 All Recipes.paprikarecipes"
+SOURCE_FILE = "Export 2026-03-02 12.59.08 All Recipes.paprikarecipes"
 OUTPUT_DIR = "All Recipes"
 TEMP_EXTRACT_DIR = "temp_extract"
 REVIEW_LIST_FILE = "recipes_needing_review.txt"
