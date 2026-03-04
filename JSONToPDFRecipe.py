@@ -326,7 +326,9 @@ def create_pdf_recipe(json_file, recipes_folder, images_folder):
         
         # Build PDF
         doc.build(story)
-        print(f"  Created PDF: {pdf_filename}")
+        categories = recipe_data.get('categories', [])
+        cats_str = ', '.join(str(c) for c in categories) if categories else '(none)'
+        print(f"  Created PDF: {pdf_filename} | Categories: {cats_str}")
         return True
     
     except Exception as e:

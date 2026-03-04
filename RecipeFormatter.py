@@ -180,6 +180,17 @@ def format_recipe_first_page(recipe_data, styles):
         info_para = Paragraph(" | ".join(info_parts), styles['info'])
         elements.append(info_para)
 
+    categories = recipe_data.get('categories', [])
+    categories_para = None
+    if categories:
+        if isinstance(categories, list):
+            cats_text = ', '.join(str(c) for c in categories if c)
+        else:
+            cats_text = str(categories)
+        if cats_text:
+            categories_para = Paragraph(f"<b>Categories:</b> {_safe(cats_text)}", styles['info'])
+            elements.append(categories_para)
+
     source = recipe_data.get('source', '')
     source_url = recipe_data.get('source_url', '')
     source_para = None
@@ -237,6 +248,9 @@ def format_recipe_first_page(recipe_data, styles):
         header_height += h + styles['title'].spaceAfter
         if info_para is not None:
             _, h = info_para.wrap(usable_width, letter[1])
+            header_height += h + styles['info'].spaceAfter
+        if categories_para is not None:
+            _, h = categories_para.wrap(usable_width, letter[1])
             header_height += h + styles['info'].spaceAfter
         if source_para is not None:
             _, h = source_para.wrap(usable_width, letter[1])

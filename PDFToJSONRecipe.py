@@ -87,14 +87,16 @@ def _strip_bullet(text):
 
 def _parse_header(header_rows):
     """
-    Extract name, servings, prep_time, cook_time, total_time, source
+    Extract name, servings, prep_time, cook_time, total_time, source, categories
     from the rows above the two-column table.
     """
     name_parts = []
     servings = prep_time = cook_time = total_time = source = ''
+    categories = []
 
     info_keys = {'Servings:', 'Prep:', 'Cook:', 'Total:'}
     info_y = None
+    categories_y = None
     source_y = None
 
     for y, row in header_rows.items():
@@ -106,6 +108,9 @@ def _parse_header(header_rows):
         # Detect info line y
         if info_y is None and any(t in info_keys for t in bold_texts):
             info_y = y
+        # Detect categories line y
+        if categories_y is None and any('Categories:' in t for t in bold_texts):
+            categories_y = y
         # Detect source line y
         if source_y is None and any('Source:' in t for t in bold_texts):
             source_y = y
@@ -132,6 +137,14 @@ def _parse_header(header_rows):
                 elif key == 'Total':
                     total_time = val
 
+    # Parse categories line
+    if categories_y is not None:
+        cats_row = header_rows[categories_y]
+        normal_spans = [s for s in cats_row if not s['bold']]
+        if normal_spans:
+            cats_text = normal_spans[0]['text'].strip()
+            categories = [c.strip() for c in cats_text.split(',') if c.strip()]
+
     # Parse source line
     if source_y is not None:
         src_row = header_rows[source_y]
@@ -140,7 +153,7 @@ def _parse_header(header_rows):
             source = normal_spans[0]['text'].strip()
 
     name = ' '.join(name_parts).strip()
-    return name, servings, prep_time, cook_time, total_time, source
+    return name, servings, prep_time, cook_time, total_time, source, categories
 
 
 def _is_section_heading(span):
@@ -329,7 +342,7 @@ def pdf_to_json(pdf_path):
     table_rows  = _group_spans_by_y(table_spans)
 
     # ── Parse header ────────────────────────────────────────────────────────
-    name, servings, prep_time, cook_time, total_time, source = _parse_header(header_rows)
+    name, servings, prep_time, cook_time, total_time, source, categories = _parse_header(header_rows)
 
     # ── Parse columns ───────────────────────────────────────────────────────
     left_spans, right_rows, nutr_spans = _parse_columns(table_rows)
@@ -419,7 +432,7 @@ def pdf_to_json(pdf_path):
         'rating': rating,
         'difficulty': '',
         'description': '',
-        'categories': [],
+        'categories': categories,
         'photos': [],
         'photo': None,
         'photo_large': None,
@@ -466,6 +479,7 @@ def main():
     print(f'  directions:   {directions_count} steps')
     print(f'  notes:        {bool(recipe["notes"].strip())}')
     print(f'  nutritional:  {bool(recipe["nutritional_info"].strip())}')
+    print(f'  categories:   {recipe["categories"]}')
 
 
 if __name__ == '__main__':

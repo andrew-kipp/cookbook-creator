@@ -180,6 +180,12 @@ Please chage JSONToPDFRecipe so that it does always download the image, it just 
 it to the recipe pdf
 
 
+Using the code in the cookbook-creator folder, please do the following: 
+Update the RecipeFormatter and PDFToJSONRecipe file so that the 'categories' section from the json 
+file is listed before the 'source' section in the pdf recipe file. Then update and JSONtoPDFRecipe file so 
+that it extracts the 'categories' section, as updated in the previously referenced files, from the pdf file 
+if available.
+
 
 ToDo:
 Want to pretty-up the formatting of the recipe without messing with the page sizing and spacing too much.
@@ -206,4 +212,4 @@ Once the basics are covered, turn this into a software package someone can execu
       b. The PaprikaExtract.py script needs to be updated so that it can loop through the files in step 1, 
          handling individual recipes ('.paprikarecipe') and batch recipe extracts ('.paprikarecipes'). 
          Currently it can only handle a single '.paprikarecipes' file.
-   4. Add a clickable button, next to the box in step 3, which has text: 'Create recipe json files'.
+   4. Add a clickable button, next to the box in step 3, which has text: 'Create json recipe files'.
