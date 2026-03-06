@@ -9,22 +9,6 @@ This script:
 5. Skips processing if recipes_needing_review.txt exists
 6. Skips JSON files that haven't been modified since their PDF was created
 
-This script will:
-
-Create Recipe Images subfolder - Creates a subfolder within 'All Recipes' to store downloaded images
-Read JSON files - Processes each JSON recipe file in the 'All Recipes' folder
-Download images - Downloads images from the image_url field if available
-Create formatted PDFs - Generates professional PDF recipes with:
-    Recipe title
-    Recipe image (if available)
-    Servings, prep time, cook time, total time
-    Source information
-    Formatted ingredients list
-    Step-by-step directions
-    Nutritional information
-    Notes
-Organize files - Saves PDFs in 'All Recipes' and images in 'All Recipes/Recipe Images'
-
 You'll need to install the reportlab library for PDF generation:
 pip install reportlab requests
 """
@@ -47,12 +31,12 @@ from RecipeFormatter import (
     PAGE_BOTTOM_MARGIN,
 )
 
-# Configuration
+# Configuration (used by CLI main() only)
 WORKSPACE_DIR = r"c:\Users\kippa\OneDrive\Documents\git-projects\cookbook-creator"
 RECIPES_DIR = "All Recipes"
 IMAGES_SUBDIR = "Recipe Images"
 REVIEW_LIST_FILE = "recipes_needing_review.txt"
-INCLUDE_IMAGES = False  # Set to True to download and embed recipe images in PDFs
+INCLUDE_IMAGES = False  # Set to True to embed recipe images in PDFs
 
 # Fix encoding for Windows console
 sys.stdout.reconfigure(encoding='utf-8')
@@ -88,63 +72,43 @@ def search_google_images(recipe_title):
         print(f"  Failed to search Google Images for '{cleaned_title}': {e}")
     return None
 
-def check_review_list_exists():
-    """Check if recipes_needing_review.txt exists and alert user"""
-    review_file_path = os.path.join(WORKSPACE_DIR, REVIEW_LIST_FILE)
-    if os.path.exists(review_file_path):
-        print(f"ERROR: {REVIEW_LIST_FILE} exists in the workspace.")
-        print("This indicates there are recipes that need to be reviewed from a previous extraction.")
-        print("Please resolve the conflicts in that file before running this script again.")
-        print(f"\nLocation: {review_file_path}")
-        return True
-    return False
-
 def json_is_newer_than_pdf(json_file, pdf_file):
     """
-    Check if JSON file is newer than PDF file
-    Returns True if JSON is newer or if PDF doesn't exist
+    Check if JSON file is newer than PDF file.
+    Returns True if JSON is newer or if PDF doesn't exist.
     """
     if not os.path.exists(pdf_file):
         return True
-    
+
     json_mtime = os.path.getmtime(json_file)
     pdf_mtime = os.path.getmtime(pdf_file)
-    
+
     # Consider them the same if modification times are within 10 minutes
-    # (accounting for potential rounding differences)
     if abs(json_mtime - pdf_mtime) <= 600:  # 600 seconds = 10 minutes
         return False
-    
-    return json_mtime > pdf_mtime
 
-def create_images_folder():
-    """Create Recipe Images subfolder if it doesn't exist"""
-    images_path = os.path.join(WORKSPACE_DIR, RECIPES_DIR, IMAGES_SUBDIR)
-    if not os.path.exists(images_path):
-        os.makedirs(images_path)
-        print(f"  Created subfolder: {IMAGES_SUBDIR}")
-    return images_path
+    return json_mtime > pdf_mtime
 
 def download_recipe_image(image_url, recipe_name, images_folder, rating=None):
     """
-    Download image from URL and save with recipe name
-    Includes retries for 403/Connection aborted and fallback to Google Images for 404
-    Returns the local path to the image if successful, None otherwise
+    Download image from URL and save with recipe name.
+    Includes retries for 403/Connection aborted and fallback to Google Images for 404.
+    Returns the local path to the image if successful, None otherwise.
     """
     if not image_url or not image_url.strip():
         return None
-    
+
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
     }
-    
+
     # Create a safe filename from recipe name
     safe_name = "".join(c for c in recipe_name if c.isalnum() or c in (' ', '_', '-'))
     safe_name = safe_name.strip()
-    
+
     # Append rating in parentheses if provided: e.g., " (5 stars)"
     suffix = f" ({rating} stars)" if rating not in (None, '') else ""
-    
+
     def save_image(response, url):
         # Determine image extension from content-type or URL
         content_type = response.headers.get('content-type', '')
@@ -154,15 +118,15 @@ def download_recipe_image(image_url, recipe_name, images_folder, rating=None):
             extension = '.png'
         else:
             extension = '.jpg'  # Default to jpg
-        
+
         # Save image
         image_path = os.path.join(images_folder, f"{safe_name}{suffix}{extension}")
         with open(image_path, 'wb') as f:
             f.write(response.content)
-        
+
         print(f"  Downloaded image: {os.path.basename(image_path)}")
         return image_path
-    
+
     # Try initial download
     try:
         response = requests.get(image_url, headers=headers, timeout=10)
@@ -174,10 +138,9 @@ def download_recipe_image(image_url, recipe_name, images_folder, rating=None):
     except requests.exceptions.HTTPError as e:
         if e.response.status_code == 403:
             print(f"  403 Forbidden for {image_url}, retrying...")
-            # Retry up to 3 times with delay
             for attempt in range(3):
                 try:
-                    time.sleep(2)  # Wait 2 seconds
+                    time.sleep(2)
                     response = requests.get(image_url, headers=headers, timeout=10)
                     response.raise_for_status()
                     if 'image' not in response.headers.get('content-type', '').lower():
@@ -186,7 +149,6 @@ def download_recipe_image(image_url, recipe_name, images_folder, rating=None):
                     return save_image(response, image_url)
                 except Exception:
                     continue
-            # If retries fail, fallback to Google Images
             print(f"  Retries failed for {image_url}, searching Google Images...")
             alt_url = search_google_images(recipe_name)
             if alt_url:
@@ -220,7 +182,6 @@ def download_recipe_image(image_url, recipe_name, images_folder, rating=None):
     except requests.exceptions.ConnectionError as e:
         if 'Connection aborted' in str(e):
             print(f"  Connection aborted for {image_url}, retrying...")
-            # Retry up to 3 times
             for attempt in range(3):
                 try:
                     time.sleep(2)
@@ -232,7 +193,6 @@ def download_recipe_image(image_url, recipe_name, images_folder, rating=None):
                     return save_image(response, image_url)
                 except Exception:
                     continue
-            # If retries fail, fallback to Google Images
             print(f"  Retries failed for {image_url}, searching Google Images...")
             alt_url = search_google_images(recipe_name)
             if alt_url:
@@ -251,7 +211,6 @@ def download_recipe_image(image_url, recipe_name, images_folder, rating=None):
             return None
     except requests.exceptions.SSLError as e:
         print(f"  SSL Error for {image_url}: {e}")
-        # Fallback to Google Images
         alt_url = search_google_images(recipe_name)
         if alt_url:
             try:
@@ -268,13 +227,13 @@ def download_recipe_image(image_url, recipe_name, images_folder, rating=None):
         print(f"  Failed to download image from {image_url}: {e}")
         return None
 
-def create_pdf_recipe(json_file, recipes_folder, images_folder):
+def create_pdf_recipe(json_file, recipes_folder, images_folder, include_images=INCLUDE_IMAGES):
     """Create a PDF recipe from a JSON file using RecipeFormatter"""
     try:
         # Read JSON file
         with open(json_file, 'r', encoding='utf-8') as f:
             recipe_data = json.load(f)
-        
+
         recipe_name = recipe_data.get('name', 'Recipe')
         rating = recipe_data.get('rating', '')
         rating_suffix = f" ({rating} Stars)" if rating != '' and rating is not None else ""
@@ -283,13 +242,13 @@ def create_pdf_recipe(json_file, recipes_folder, images_folder):
         pdf_basename = f"{recipe_name}{rating_suffix}"
         pdf_filename = f"{pdf_basename}.pdf"
         pdf_path = os.path.join(recipes_folder, pdf_filename)
-        
+
         # Check if JSON is newer than PDF
         if not json_is_newer_than_pdf(json_file, pdf_path):
             print(f"  Skipped (not modified): {os.path.basename(json_file)}")
             return None
-        
-        # Create PDF document with reduced top/bottom margins
+
+        # Create PDF document
         doc = SimpleDocTemplate(
             pdf_path,
             pagesize=letter,
@@ -298,15 +257,14 @@ def create_pdf_recipe(json_file, recipes_folder, images_folder):
             topMargin=PAGE_TOP_MARGIN,
             bottomMargin=PAGE_BOTTOM_MARGIN,
         )
-        
+
         # Get styles
         styles = get_recipe_styles()
-        
+
         # Build story
         story = []
-        
-        # First page: Recipe info, ingredients, and directions
-        # Returns (elements, overflow_ingredients, overflow_right, has_overflow_directions)
+
+        # First page
         first_page_elements, overflow_ingredients, overflow_right, overflow_directions_count = \
             format_recipe_first_page(recipe_data, styles)
         story.extend(first_page_elements)
@@ -317,60 +275,76 @@ def create_pdf_recipe(json_file, recipes_folder, images_folder):
         if image_url:
             image_path = download_recipe_image(image_url, recipe_name, images_folder, rating)
 
-        # Second page: overflow content (two-column, paginated) then optional image
+        # Second page: overflow content then optional image
         story.extend(format_recipe_second_page(
             recipe_data, image_path, styles,
             overflow_ingredients, overflow_right, overflow_directions_count,
-            include_image=INCLUDE_IMAGES,
+            include_image=include_images,
         ))
-        
+
         # Build PDF
         doc.build(story)
         categories = recipe_data.get('categories', [])
         cats_str = ', '.join(str(c) for c in categories) if categories else '(none)'
         print(f"  Created PDF: {pdf_filename} | Categories: {cats_str}")
         return True
-    
+
     except Exception as e:
         print(f"  Error processing {os.path.basename(json_file)}: {e}")
         return False
 
-def main():
-    os.chdir(WORKSPACE_DIR)
-    
-    # Check if review list exists
-    print("Step 1: Checking for pending recipe reviews")
-    if check_review_list_exists():
-        print("\nScript execution halted.")
+
+def process_json_to_pdf(recipes_dir, progress_cb=None, include_images=INCLUDE_IMAGES):
+    """
+    Convert all JSON recipe files in recipes_dir to PDFs.
+
+    recipes_dir  : absolute path to the folder containing JSON files (and where PDFs are saved).
+    progress_cb  : optional callable(message: str) for progress reporting.
+    include_images: whether to embed images in the PDFs (default: False).
+    """
+    def log(msg):
+        if progress_cb:
+            progress_cb(msg)
+        else:
+            print(msg)
+
+    recipes_dir = str(recipes_dir)
+
+    # Check if review list exists (look in recipes_dir)
+    review_file_path = os.path.join(recipes_dir, REVIEW_LIST_FILE)
+    if os.path.exists(review_file_path):
+        log(f"ERROR: {REVIEW_LIST_FILE} exists in the recipes folder.")
+        log("Please resolve the conflicts before running this script again.")
+        log(f"Location: {review_file_path}")
         return
-    print("  No pending reviews - proceeding with PDF generation\n")
-    
-    print("Step 2: Creating Recipe Images subfolder")
-    images_folder = create_images_folder()
-    
-    print(f"\nStep 3: Processing JSON recipe files")
-    recipes_folder = RECIPES_DIR
-    
+
+    # Create images subfolder
+    images_folder = os.path.join(recipes_dir, IMAGES_SUBDIR)
+    os.makedirs(images_folder, exist_ok=True)
+    log(f"Images folder: {images_folder}")
+
     # Find all JSON files
-    json_files = list(Path(recipes_folder).glob("*.json"))
-    print(f"  Found {len(json_files)} JSON recipe files")
-    
-    print(f"\nStep 4: Converting JSON to PDF and downloading images")
+    json_files = list(Path(recipes_dir).glob("*.json"))
+    log(f"Found {len(json_files)} JSON recipe files")
+
     success_count = 0
     skipped_count = 0
     for json_file in json_files:
-        result = create_pdf_recipe(str(json_file), recipes_folder, images_folder)
+        result = create_pdf_recipe(str(json_file), recipes_dir, images_folder, include_images)
         if result is True:
             success_count += 1
         elif result is None:
             skipped_count += 1
-    
-    print(f"\nStep 5: Summary")
-    print(f"  Successfully converted: {success_count}/{len(json_files)} recipes")
-    print(f"  Skipped (not modified): {skipped_count}/{len(json_files)} recipes")
-    print(f"  PDFs saved in: {recipes_folder}")
-    print(f"  Images saved in: {os.path.join(recipes_folder, IMAGES_SUBDIR)}")
-    print(f"\nComplete!")
+
+    log(f"Successfully converted: {success_count}/{len(json_files)} recipes")
+    log(f"Skipped (not modified): {skipped_count}/{len(json_files)} recipes")
+    log(f"PDFs saved in: {recipes_dir}")
+    log("Complete!")
+
+
+def main():
+    recipes_path = os.path.join(WORKSPACE_DIR, RECIPES_DIR)
+    process_json_to_pdf(recipes_path)
 
 if __name__ == "__main__":
     main()

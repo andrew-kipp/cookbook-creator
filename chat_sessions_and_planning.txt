@@ -187,29 +187,51 @@ that it extracts the 'categories' section, as updated in the previously referenc
 if available.
 
 
-ToDo:
-Want to pretty-up the formatting of the recipe without messing with the page sizing and spacing too much.
+Create a simple executable application which can do the following things. Some of the components have 
+already been created but will need to be updated to integrate with the application. Please use an update the 
+scripts as necessary.
+For now the application should have a fairly simple GUI which may be updated later. Please give the 
+application the title: 'Recipe and Cookbook Creator'. Add a subtitle: 'For for use with individual recipe 
+screenshots and Paprika Recipe Manager 3 recipe files'.
 
-Once the basics are covered, turn this into a software package someone can execute on their computer. It 
-   should have a very simple gui allowing the user to do the following things:
-   1. Add a title: 'Recipe and Cookbook Creator'. Add a subtitle: 'For for use with individual recipe 
-      screenshots and Paprika Recipe Manager 3 recipe files'.
-   1. Add a designated space to drag-and-drop files into, or select from the files system. The software 
-      should then list the files that it received and have a clickable button below the list to 
-      clear it and return to the drag-and-drop view so that the user can select or add new files.
-   1. Add some text, spaced a little below step 1, which 
-   2. There should be a single line box below, containing the temporary text: 'Select destination folder'. 
-      This box should be clickable so that the user can select the file system folder they want to use for 
-      storing the parsed recipes.
-   3. Add a clickable button, next to the box in step 2, which has text: 'Create recipe pdf files'. This button 
-      should then determine the file types in step 1, determine how to extract them, and convert them to PDF. 
-      For now this should be able to handle '.paprikarecipe' and '.paprikarecipes' files, but eventually it 
-      should be able to handle image files as well. It should use the PaprikaExtract.py script and then the 
-      JSONToPDFRecipe.py script create the recipe files. This button should only be clickable if there is a 
-      path specified in the box in step 2.
-      a. The PaprikaExtract.py and JSONToPDFRecipe.py scripts need to be updated to receive the folder path 
-         specified in step 2 and use it rather than the current folder called 'All Recipes'.
-      b. The PaprikaExtract.py script needs to be updated so that it can loop through the files in step 1, 
-         handling individual recipes ('.paprikarecipe') and batch recipe extracts ('.paprikarecipes'). 
-         Currently it can only handle a single '.paprikarecipes' file.
-   4. Add a clickable button, next to the box in step 3, which has text: 'Create json recipe files'.
+The application should be able to do and handle the following:
+1. Have a designated space to drag-and-drop files into, or select from the files system. The software should 
+   then list the files that it received and have a clickable button below the list to clear it and return to 
+   the drag-and-drop view so that the user can select or add new files.
+2. Have a space for specifying the file system location that the user can select.
+3. Have clickable buttons so for the following items. Based on the button and the file types of the files in 
+   the spot created in the first bullet, the application should be determing what transformations, if any, 
+   need to be done.
+   - Create recipe pdf files
+   - Create json recipe files
+   - Create paprikarecipes file
+4. Have a section for creating a cookbook based on recipes in the file system location specified in the 
+   second bullet point. It should have a clickable button at the bottom which creates a cookbook from the 
+   distinct recipe files. The section should also have the following items, but also have enough room for 
+   future enhancements. 
+  a. A set of buttons which filter the recipes that will be added in the cookbook. The buttons should be: 
+   'All Recipes', '4 & 5 Stars', '5 Stars'. Only one button should be selectable at a time.
+  b. A set of buttons which affect the cookbook formatting. The buttons should be: 'Grouped Images', 
+    'Image Adjacent to Recipe', 'No Images'. 
+5. Possibly necessary code updates.
+  a. The PaprikaExtract.py and JSONToPDFRecipe.py scripts need to be updated to receive the folder path 
+     specified in step 2 and use it rather than the current folder called 'All Recipes'.
+  b. The PaprikaExtract.py script needs to be updated so that it can loop through the files in step 1, 
+     handling individual recipes ('.paprikarecipe') and batch recipe extracts ('.paprikarecipes'). 
+     Currently it can only handle a single '.paprikarecipes' file.
+
+
+Everything above this line has already been completed.
+
+Appl has been created, next things to do are determining if layout is acceptable, adjust formatting if 
+necessary, and then testing functions. Beyond that will be cookbook and image formatting, possibly recipe 
+updates, and more.
+
+Further To Do, but needs more planning.
+- Want to pretty-up the formatting of the recipe without messing with the page sizing and spacing too 
+  much. Make this optional or let the app user decide what the pretty formatting should be?
+- Add Table of Contents for the main categories, but don't list the recipes.
+- Will have to handle recipe categories, maybe even adding a categories title page?
+- Include an index, but need to determine how to sort things.
+- Need to do some pre-emptory formatting adjustments so that any two-page recipes aren't printed on the 
+  front and back of one page. Want to be able to see the whole recipe at once without flipping pages.

@@ -1,0 +1,524 @@
+"""
+Recipe and Cookbook Creator
+GUI application for converting and managing recipe files.
+"""
+
+import json
+import os
+import queue
+import sys
+import threading
+from pathlib import Path
+import tkinter as tk
+from tkinter import filedialog, messagebox, scrolledtext
+from tkinter import ttk
+
+# Drag-and-drop support (optional)
+try:
+    from tkinterdnd2 import TkinterDnD, DND_FILES
+    _DND_AVAILABLE = True
+except ImportError:
+    _DND_AVAILABLE = False
+
+# ── Constants ─────────────────────────────────────────────────────────────────
+IMAGES_SUBDIR = "Recipe Images"
+IMPORT_DIR_NAME = "Paprika Recipes to Import"
+COOKBOOK_FILENAME = "Cookbook.pdf"
+
+ACCENT   = "#2C3E50"
+BTN_BG   = "#3498DB"
+BTN_FG   = "white"
+BTN_ACT  = "#2980B9"
+SEP_CLR  = "#BDC3C7"
+LOG_BG   = "#F9F9F9"
+LOG_FG   = "#2C3E50"
+RADIO_SEL = "#2980B9"
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _fix_stdout():
+    """Reconfigure stdout to UTF-8 on Windows if needed."""
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+    except Exception:
+        pass
+
+
+# ── Cookbook generator ────────────────────────────────────────────────────────
+
+def create_cookbook(recipes_dir, output_path, filter_mode="all", image_mode="none", progress_cb=None):
+    """
+    Generate a single multi-page PDF cookbook from JSON recipe files.
+
+    recipes_dir  : folder containing .json recipe files (and a Recipe Images subfolder)
+    output_path  : full path for the output PDF
+    filter_mode  : "all" | "4_and_5_stars" | "5_stars"
+    image_mode   : "grouped" | "adjacent" | "none"
+    progress_cb  : optional callable(str)
+    """
+    from reportlab.lib.pagesizes import letter
+    from reportlab.platypus import SimpleDocTemplate, PageBreak
+    from RecipeFormatter import (
+        get_recipe_styles,
+        format_recipe_first_page,
+        format_recipe_second_page,
+        LEFT_RIGHT_MARGIN,
+        PAGE_TOP_MARGIN,
+        PAGE_BOTTOM_MARGIN,
+    )
+
+    def log(msg):
+        if progress_cb:
+            progress_cb(msg)
+        else:
+            print(msg)
+
+    recipes_dir  = Path(recipes_dir)
+    images_dir   = recipes_dir / IMAGES_SUBDIR
+
+    # Collect JSON files
+    json_files = sorted(recipes_dir.glob("*.json"))
+    log(f"Found {len(json_files)} JSON files")
+
+    # Apply filter
+    filtered = []
+    for jf in json_files:
+        try:
+            with open(jf, encoding='utf-8') as f:
+                data = json.load(f)
+            rating = data.get('rating', 0) or 0
+            if filter_mode == "5_stars" and rating < 5:
+                continue
+            if filter_mode == "4_and_5_stars" and rating < 4:
+                continue
+            filtered.append((jf, data))
+        except Exception as e:
+            log(f"  Warning: could not read {jf.name}: {e}")
+
+    log(f"Recipes after filter '{filter_mode}': {len(filtered)}")
+    if not filtered:
+        log("No recipes match the selected filter. Cookbook not created.")
+        return
+
+    styles = get_recipe_styles()
+
+    # Build the full story
+    story = []
+    include_image = image_mode in ("grouped", "adjacent")
+
+    for idx, (jf, recipe_data) in enumerate(filtered):
+        recipe_name = recipe_data.get('name', jf.stem)
+        rating = recipe_data.get('rating', '')
+        log(f"  Adding ({idx+1}/{len(filtered)}): {recipe_name}")
+
+        # Find associated image
+        image_path = None
+        if include_image:
+            safe_name = "".join(c for c in recipe_name if c.isalnum() or c in (' ', '_', '-')).strip()
+            suffix_str = f" ({rating} stars)" if rating not in (None, '') else ""
+            for ext in ('.jpg', '.jpeg', '.png', '.gif', '.webp'):
+                candidate = images_dir / f"{safe_name}{suffix_str}{ext}"
+                if candidate.exists():
+                    image_path = str(candidate)
+                    break
+            if not image_path:
+                # Prefix match fallback
+                for f in images_dir.iterdir() if images_dir.exists() else []:
+                    if f.is_file() and f.stem.lower().startswith(safe_name.lower()):
+                        image_path = str(f)
+                        break
+
+        first_page_elements, overflow_ingredients, overflow_right, overflow_directions_count = \
+            format_recipe_first_page(recipe_data, styles)
+        story.extend(first_page_elements)
+
+        second_page_elements = format_recipe_second_page(
+            recipe_data, image_path, styles,
+            overflow_ingredients, overflow_right, overflow_directions_count,
+            include_image=include_image,
+        )
+        story.extend(second_page_elements)
+
+        # Add page break between recipes (not after the last one)
+        if idx < len(filtered) - 1:
+            story.append(PageBreak())
+
+    # Build the PDF
+    doc = SimpleDocTemplate(
+        str(output_path),
+        pagesize=letter,
+        leftMargin=LEFT_RIGHT_MARGIN,
+        rightMargin=LEFT_RIGHT_MARGIN,
+        topMargin=PAGE_TOP_MARGIN,
+        bottomMargin=PAGE_BOTTOM_MARGIN,
+    )
+    doc.build(story)
+    log(f"Cookbook saved: {output_path}")
+
+
+# ── Main Application ──────────────────────────────────────────────────────────
+
+class App:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Recipe and Cookbook Creator")
+        self.root.resizable(True, True)
+        self.root.minsize(600, 700)
+
+        self._files = []          # list of file paths added by user
+        self._busy = False        # True while a background operation runs
+        self._log_queue = queue.Queue()
+
+        self._build_ui()
+        self._poll_log_queue()
+
+    # ── UI Construction ───────────────────────────────────────────────────────
+
+    def _build_ui(self):
+        root = self.root
+        root.configure(bg="white")
+
+        # ── Title area ──────────────────────────────────────────────────────
+        title_frame = tk.Frame(root, bg=ACCENT, pady=12)
+        title_frame.pack(fill=tk.X)
+        tk.Label(title_frame, text="Recipe and Cookbook Creator",
+                 font=("Helvetica", 16, "bold"), fg="white", bg=ACCENT).pack()
+        tk.Label(title_frame,
+                 text="For use with individual recipe screenshots and Paprika Recipe Manager 3 recipe files",
+                 font=("Helvetica", 9), fg="#BDC3C7", bg=ACCENT).pack()
+
+        # ── Main scrollable content ──────────────────────────────────────────
+        outer = tk.Frame(root, bg="white")
+        outer.pack(fill=tk.BOTH, expand=True, padx=16, pady=10)
+
+        # ── Files section ────────────────────────────────────────────────────
+        self._section_label(outer, "FILES")
+
+        dnd_frame = tk.Frame(outer, bg="#EBF5FB", relief=tk.GROOVE, bd=2, height=80)
+        dnd_frame.pack(fill=tk.X, pady=(0, 4))
+        dnd_frame.pack_propagate(False)
+        dnd_lbl = tk.Label(dnd_frame,
+                           text="Drag & drop files here\n(.paprikarecipes, .paprikarecipe, .pdf, .json)",
+                           font=("Helvetica", 9), bg="#EBF5FB", fg="#5D6D7E", justify=tk.CENTER)
+        dnd_lbl.pack(expand=True)
+
+        if _DND_AVAILABLE:
+            dnd_frame.drop_target_register(DND_FILES)
+            dnd_frame.dnd_bind('<<Drop>>', self._on_dnd_drop)
+            dnd_lbl.drop_target_register(DND_FILES)
+            dnd_lbl.dnd_bind('<<Drop>>', self._on_dnd_drop)
+
+        btn_row = tk.Frame(outer, bg="white")
+        btn_row.pack(fill=tk.X, pady=(0, 4))
+        self._btn(btn_row, "Browse Files...", self._browse_files).pack(side=tk.LEFT, padx=(0, 8))
+        self._btn(btn_row, "Clear Files", self._clear_files, secondary=True).pack(side=tk.LEFT)
+
+        list_frame = tk.Frame(outer, bg="white")
+        list_frame.pack(fill=tk.X, pady=(0, 8))
+        self._file_listbox = tk.Listbox(list_frame, height=5, font=("Helvetica", 8),
+                                         selectmode=tk.EXTENDED, bg="#FDFEFE", relief=tk.GROOVE)
+        sb = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self._file_listbox.yview)
+        self._file_listbox.configure(yscrollcommand=sb.set)
+        self._file_listbox.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        sb.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # ── Output folder ────────────────────────────────────────────────────
+        self._hsep(outer)
+        self._section_label(outer, "OUTPUT FOLDER")
+
+        folder_row = tk.Frame(outer, bg="white")
+        folder_row.pack(fill=tk.X, pady=(0, 8))
+        self._folder_var = tk.StringVar()
+        tk.Entry(folder_row, textvariable=self._folder_var,
+                 font=("Helvetica", 9), relief=tk.GROOVE).pack(side=tk.LEFT, fill=tk.X,
+                                                                 expand=True, padx=(0, 8))
+        self._btn(folder_row, "Browse Folder...", self._browse_folder).pack(side=tk.LEFT)
+
+        # ── Actions ──────────────────────────────────────────────────────────
+        self._hsep(outer)
+        self._section_label(outer, "ACTIONS")
+
+        self._action_btns = []
+        for label, cmd in [
+            ("Create Recipe PDFs",         self._action_create_pdfs),
+            ("Create JSON Recipe Files",   self._action_create_json),
+            ("Create Paprikarecipes File", self._action_create_paprikarecipes),
+        ]:
+            b = self._btn(outer, label, cmd)
+            b.pack(fill=tk.X, pady=2)
+            self._action_btns.append(b)
+
+        # ── Cookbook creator ─────────────────────────────────────────────────
+        self._hsep(outer)
+        self._section_label(outer, "COOKBOOK CREATOR")
+
+        # Filter radio buttons
+        filter_row = tk.Frame(outer, bg="white")
+        filter_row.pack(fill=tk.X, pady=(4, 2))
+        tk.Label(filter_row, text="Filter:", font=("Helvetica", 9, "bold"),
+                 bg="white", fg=ACCENT).pack(side=tk.LEFT, padx=(0, 8))
+        self._filter_var = tk.StringVar(value="all")
+        for label, val in [("All Recipes", "all"), ("4 & 5 Stars", "4_and_5_stars"), ("5 Stars", "5_stars")]:
+            tk.Radiobutton(filter_row, text=label, variable=self._filter_var, value=val,
+                           font=("Helvetica", 9), bg="white", fg=ACCENT,
+                           selectcolor=RADIO_SEL, activebackground="white").pack(side=tk.LEFT, padx=4)
+
+        # Format radio buttons
+        format_row = tk.Frame(outer, bg="white")
+        format_row.pack(fill=tk.X, pady=(2, 8))
+        tk.Label(format_row, text="Format:", font=("Helvetica", 9, "bold"),
+                 bg="white", fg=ACCENT).pack(side=tk.LEFT, padx=(0, 8))
+        self._format_var = tk.StringVar(value="none")
+        for label, val in [("Grouped Images", "grouped"),
+                            ("Image Adjacent to Recipe", "adjacent"),
+                            ("No Images", "none")]:
+            tk.Radiobutton(format_row, text=label, variable=self._format_var, value=val,
+                           font=("Helvetica", 9), bg="white", fg=ACCENT,
+                           selectcolor=RADIO_SEL, activebackground="white").pack(side=tk.LEFT, padx=4)
+
+        cb_btn = self._btn(outer, "Create Cookbook", self._action_create_cookbook)
+        cb_btn.pack(fill=tk.X, pady=2)
+        self._action_btns.append(cb_btn)
+
+        # ── Status log ───────────────────────────────────────────────────────
+        self._hsep(outer)
+        self._section_label(outer, "STATUS LOG")
+        self._log_text = scrolledtext.ScrolledText(
+            outer, height=10, state=tk.DISABLED,
+            font=("Courier", 8), bg=LOG_BG, fg=LOG_FG, relief=tk.GROOVE
+        )
+        self._log_text.pack(fill=tk.BOTH, expand=True, pady=(0, 8))
+
+    # ── Widget helpers ────────────────────────────────────────────────────────
+
+    def _section_label(self, parent, text):
+        tk.Label(parent, text=text, font=("Helvetica", 9, "bold"),
+                 fg=ACCENT, bg="white").pack(anchor=tk.W, pady=(6, 2))
+
+    def _hsep(self, parent):
+        ttk.Separator(parent, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=6)
+
+    def _btn(self, parent, text, command, secondary=False):
+        bg = "#95A5A6" if secondary else BTN_BG
+        ab = "#7F8C8D" if secondary else BTN_ACT
+        return tk.Button(parent, text=text, command=command,
+                         bg=bg, fg=BTN_FG, activebackground=ab, activeforeground=BTN_FG,
+                         font=("Helvetica", 9), relief=tk.FLAT, padx=10, pady=5,
+                         cursor="hand2")
+
+    # ── File management ───────────────────────────────────────────────────────
+
+    def _on_dnd_drop(self, event):
+        # tkinterdnd2 returns paths in braces if they have spaces
+        raw = event.data
+        paths = []
+        # Parse brace-wrapped items (Windows DnD)
+        import re
+        items = re.findall(r'\{([^}]+)\}|(\S+)', raw)
+        for braced, unbraced in items:
+            p = braced or unbraced
+            if p:
+                paths.append(p)
+        self._add_files(paths)
+
+    def _browse_files(self):
+        paths = filedialog.askopenfilenames(
+            title="Select recipe files",
+            filetypes=[
+                ("All supported files", "*.paprikarecipes *.paprikarecipe *.pdf *.json"),
+                ("Paprika batch files", "*.paprikarecipes"),
+                ("Paprika recipe files", "*.paprikarecipe"),
+                ("PDF files", "*.pdf"),
+                ("JSON files", "*.json"),
+                ("All files", "*.*"),
+            ]
+        )
+        self._add_files(list(paths))
+
+    def _add_files(self, paths):
+        for p in paths:
+            if p not in self._files:
+                self._files.append(p)
+                self._file_listbox.insert(tk.END, os.path.basename(p))
+
+    def _clear_files(self):
+        self._files.clear()
+        self._file_listbox.delete(0, tk.END)
+
+    def _browse_folder(self):
+        folder = filedialog.askdirectory(title="Select output folder")
+        if folder:
+            self._folder_var.set(folder)
+
+    # ── Validation ────────────────────────────────────────────────────────────
+
+    def _get_output_folder(self):
+        folder = self._folder_var.get().strip()
+        if not folder:
+            messagebox.showerror("No folder selected",
+                                 "Please select an output folder before running.")
+            return None
+        return folder
+
+    # ── Background task runner ────────────────────────────────────────────────
+
+    def _run_task(self, fn):
+        """Run fn() in a background thread; disable buttons while running."""
+        if self._busy:
+            messagebox.showwarning("Busy", "Another operation is already running.")
+            return
+        self._busy = True
+        for b in self._action_btns:
+            b.configure(state=tk.DISABLED)
+        self._log("─" * 50)
+
+        def worker():
+            try:
+                fn()
+            except Exception as e:
+                self._log(f"ERROR: {e}")
+            finally:
+                self._log_queue.put(None)  # signal done
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_task_done(self):
+        self._busy = False
+        for b in self._action_btns:
+            b.configure(state=tk.NORMAL)
+
+    # ── Log helpers ───────────────────────────────────────────────────────────
+
+    def _log(self, msg):
+        """Thread-safe log append."""
+        self._log_queue.put(str(msg) + "\n")
+
+    def _poll_log_queue(self):
+        try:
+            while True:
+                item = self._log_queue.get_nowait()
+                if item is None:
+                    self._on_task_done()
+                else:
+                    self._log_text.configure(state=tk.NORMAL)
+                    self._log_text.insert(tk.END, item)
+                    self._log_text.see(tk.END)
+                    self._log_text.configure(state=tk.DISABLED)
+        except queue.Empty:
+            pass
+        self.root.after(100, self._poll_log_queue)
+
+    # ── Actions ───────────────────────────────────────────────────────────────
+
+    def _action_create_pdfs(self):
+        folder = self._get_output_folder()
+        if not folder:
+            return
+
+        json_files = [f for f in self._files if f.lower().endswith('.json')]
+
+        def task():
+            from JSONToPDFRecipe import process_json_to_pdf, create_pdf_recipe, IMAGES_SUBDIR as ISUB
+            if json_files:
+                self._log(f"Creating PDFs for {len(json_files)} selected JSON file(s)...")
+                images_folder = os.path.join(folder, ISUB)
+                os.makedirs(images_folder, exist_ok=True)
+                for jf in json_files:
+                    create_pdf_recipe(jf, folder, images_folder,
+                                      progress_cb=self._log if False else None)
+            else:
+                self._log(f"Creating PDFs for all JSON files in: {folder}")
+                process_json_to_pdf(folder, progress_cb=self._log)
+
+        self._run_task(task)
+
+    def _action_create_json(self):
+        folder = self._get_output_folder()
+        if not folder:
+            return
+
+        paprika_files = [f for f in self._files
+                         if f.lower().endswith('.paprikarecipes') or f.lower().endswith('.paprikarecipe')]
+        pdf_files = [f for f in self._files if f.lower().endswith('.pdf')]
+
+        if not paprika_files and not pdf_files:
+            messagebox.showerror("No files",
+                                 "Please add .paprikarecipes, .paprikarecipe, or .pdf files first.")
+            return
+
+        def task():
+            if paprika_files:
+                self._log(f"Extracting {len(paprika_files)} Paprika file(s) to: {folder}")
+                from PaprikaExtract import extract_paprika_files
+                extract_paprika_files(paprika_files, folder, progress_cb=self._log)
+
+            if pdf_files:
+                self._log(f"Converting {len(pdf_files)} PDF file(s) to JSON...")
+                from PDFToJSONRecipe import pdf_to_json
+                for pdf in pdf_files:
+                    try:
+                        self._log(f"  Converting: {os.path.basename(pdf)}")
+                        recipe = pdf_to_json(pdf)
+                        import re
+                        base = re.sub(r'\s*\(\d+\s*Stars?\)\s*$', '', Path(pdf).stem,
+                                      flags=re.IGNORECASE).strip()
+                        out = os.path.join(folder, base + '.json')
+                        with open(out, 'w', encoding='utf-8') as f:
+                            json.dump(recipe, f, indent=2, ensure_ascii=False)
+                        self._log(f"    Saved: {os.path.basename(out)}")
+                    except Exception as e:
+                        self._log(f"    Error: {e}")
+
+        self._run_task(task)
+
+    def _action_create_paprikarecipes(self):
+        folder = self._get_output_folder()
+        if not folder:
+            return
+
+        import_dir = os.path.join(os.path.dirname(folder), IMPORT_DIR_NAME)
+
+        def task():
+            self._log(f"Creating Paprikarecipes import from: {folder}")
+            self._log(f"Output folder: {import_dir}")
+            from CreatePaprikaImport import create_paprika_import
+            create_paprika_import(folder, import_dir, progress_cb=self._log)
+
+        self._run_task(task)
+
+    def _action_create_cookbook(self):
+        folder = self._get_output_folder()
+        if not folder:
+            return
+
+        filter_mode = self._filter_var.get()
+        image_mode  = self._format_var.get()
+        output_path = os.path.join(folder, COOKBOOK_FILENAME)
+
+        def task():
+            self._log(f"Creating cookbook...")
+            self._log(f"  Folder:  {folder}")
+            self._log(f"  Filter:  {filter_mode}")
+            self._log(f"  Images:  {image_mode}")
+            self._log(f"  Output:  {output_path}")
+            create_cookbook(folder, output_path, filter_mode, image_mode,
+                            progress_cb=self._log)
+
+        self._run_task(task)
+
+
+# ── Entry point ───────────────────────────────────────────────────────────────
+
+def main():
+    _fix_stdout()
+    if _DND_AVAILABLE:
+        root = TkinterDnD.Tk()
+    else:
+        root = tk.Tk()
+    app = App(root)
+    root.mainloop()
+
+
+if __name__ == "__main__":
+    main()

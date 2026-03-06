@@ -33,7 +33,7 @@ from pathlib import Path
 # Fix encoding for Windows console
 sys.stdout.reconfigure(encoding='utf-8')
 
-# ── Configuration ─────────────────────────────────────────────────────────────
+# ── Configuration (used by CLI main() only) ───────────────────────────────────
 WORKSPACE_DIR = r"c:\Users\kippa\OneDrive\Documents\git-projects\cookbook-creator"
 RECIPES_DIR   = "All Recipes"
 IMAGES_SUBDIR = "Recipe Images"
@@ -146,112 +146,125 @@ def _clean_import_folder(import_dir, bundle_name):
             f.unlink()
 
 
-# ── Main ──────────────────────────────────────────────────────────────────────
+# ── Public API ────────────────────────────────────────────────────────────────
 
-def main():
-    os.chdir(WORKSPACE_DIR)
+def create_paprika_import(recipes_dir, import_dir, progress_cb=None, output_name=OUTPUT_NAME):
+    """
+    Build a Paprika import package from recipes in recipes_dir.
 
-    recipes_dir  = Path(RECIPES_DIR)
-    images_dir   = recipes_dir / IMAGES_SUBDIR
-    import_dir   = Path(IMPORT_DIR)
+    recipes_dir  : absolute path to the folder containing JSON and PDF files.
+    import_dir   : absolute path to the output folder for the import package.
+    progress_cb  : optional callable(message: str) for progress reporting.
+    output_name  : stem for the output .paprikarecipes bundle (default: 'New Recipes').
+    """
+    def log(msg):
+        if progress_cb:
+            progress_cb(msg)
+        else:
+            print(msg)
+
+    from PDFToJSONRecipe import pdf_to_json
+
+    recipes_dir = Path(recipes_dir)
+    import_dir  = Path(import_dir)
+    images_dir  = recipes_dir / IMAGES_SUBDIR
 
     # ── Step 1: Find PDFs without matching JSONs ──────────────────────────────
-    print('Step 1: Scanning for PDFs without matching JSON files')
+    log('Step 1: Scanning for PDFs without matching JSON files')
     unmatched_pdfs = []
     for pdf in sorted(recipes_dir.glob('*.pdf')):
         if _find_matching_json(pdf, recipes_dir) is None:
             unmatched_pdfs.append(pdf)
-            print(f'  No JSON: {pdf.name}')
-
-    print(f'  Found {len(unmatched_pdfs)} unmatched PDF(s)')
+            log(f'  No JSON: {pdf.name}')
+    log(f'  Found {len(unmatched_pdfs)} unmatched PDF(s)')
 
     # ── Step 2: Convert unmatched PDFs → JSONs ────────────────────────────────
-    print('\nStep 2: Converting PDFs to JSON')
+    log('\nStep 2: Converting PDFs to JSON')
     if not unmatched_pdfs:
-        print('  No PDFs to convert.')
-
-    # Import here so we only need the dependency when actually running
-    from PDFToJSONRecipe import pdf_to_json
+        log('  No PDFs to convert.')
 
     new_json_paths = []
     for pdf in unmatched_pdfs:
         base_name = _strip_rating_suffix(pdf.stem)
         out_path  = recipes_dir / f'{base_name}.json'
-        print(f'  Converting: {pdf.name}')
+        log(f'  Converting: {pdf.name}')
         try:
             recipe = pdf_to_json(str(pdf))
             with open(out_path, 'w', encoding='utf-8') as f:
                 json.dump(recipe, f, indent=2, ensure_ascii=False)
             new_json_paths.append(out_path)
-            print(f'    Saved: {out_path.name}')
+            log(f'    Saved: {out_path.name}')
         except Exception as e:
-            print(f'    Error: {e}')
+            log(f'    Error: {e}')
 
     # ── Step 3: Early exit if nothing was created ─────────────────────────────
     if not new_json_paths:
-        print('\nNo new JSON files were created. Nothing to import. Exiting.')
+        log('\nNo new JSON files were created. Nothing to import. Exiting.')
         return
 
-    print(f'\n  Created {len(new_json_paths)} new JSON file(s)')
+    log(f'\n  Created {len(new_json_paths)} new JSON file(s)')
 
     # ── Step 4: Clear import folder ───────────────────────────────────────────
-    print(f'\nStep 4: Clearing "{IMPORT_DIR}" folder')
+    log(f'\nStep 4: Clearing import folder')
     if import_dir.exists():
         for f in import_dir.iterdir():
             if f.is_file():
                 f.unlink()
-        print(f'  Cleared existing files')
+        log(f'  Cleared existing files')
     else:
         import_dir.mkdir(parents=True)
-        print(f'  Created folder: {IMPORT_DIR}')
+        log(f'  Created folder: {import_dir}')
 
     # ── Step 5: Copy new JSONs + associated images to import folder ───────────
-    print(f'\nStep 5: Copying files to "{IMPORT_DIR}"')
+    log(f'\nStep 5: Copying files to import folder')
     for json_path in new_json_paths:
-        # Load JSON so we can check/embed photo_data
         with open(json_path, encoding='utf-8') as f:
             recipe_data = json.load(f)
 
         recipe_name = recipe_data.get('name', json_path.stem)
 
-        # Look for an associated image
         img_path = _find_associated_image(recipe_name, images_dir)
         if img_path:
-            # Embed image into the JSON copy (only if photo_data is absent)
             _embed_image_in_json(recipe_data, img_path)
-            # Copy the image file
             shutil.copy2(str(img_path), str(import_dir / img_path.name))
-            print(f'  Copied image: {img_path.name}')
+            log(f'  Copied image: {img_path.name}')
 
-        # Write (possibly updated) JSON to import folder
         dest_json = import_dir / json_path.name
         with open(dest_json, 'w', encoding='utf-8') as f:
             json.dump(recipe_data, f, indent=2, ensure_ascii=False)
-        print(f'  Copied JSON: {json_path.name}')
+        log(f'  Copied JSON: {json_path.name}')
 
     # ── Step 6: Gzip each JSON → .paprikarecipe ───────────────────────────────
-    print(f'\nStep 6: Compressing JSON files to .paprikarecipe format')
+    log(f'\nStep 6: Compressing JSON files to .paprikarecipe format')
     for json_file in list(import_dir.glob('*.json')):
         gz_path = _gzip_json(json_file)
-        print(f'  Compressed: {json_file.name} → {gz_path.name}')
+        log(f'  Compressed: {json_file.name} → {gz_path.name}')
 
     # ── Step 7: Bundle into .paprikarecipes ───────────────────────────────────
-    print(f'\nStep 7: Bundling into {OUTPUT_NAME}.paprikarecipes')
-    bundle_path = _bundle_paprikarecipes(import_dir, OUTPUT_NAME)
+    log(f'\nStep 7: Bundling into {output_name}.paprikarecipes')
+    bundle_path = _bundle_paprikarecipes(import_dir, output_name)
     if bundle_path:
-        print(f'  Created: {bundle_path.name}')
+        log(f'  Created: {bundle_path.name}')
     else:
-        print('  No .paprikarecipe files to bundle.')
+        log('  No .paprikarecipe files to bundle.')
 
     # ── Step 8: Clean up import folder ───────────────────────────────────────
-    print(f'\nStep 8: Cleaning up import folder')
-    _clean_import_folder(import_dir, OUTPUT_NAME)
+    log(f'\nStep 8: Cleaning up import folder')
+    _clean_import_folder(import_dir, output_name)
     remaining = [f.name for f in import_dir.iterdir() if f.is_file()]
-    print(f'  Remaining files ({len(remaining)}):')
+    log(f'  Remaining files ({len(remaining)}):')
     for name in sorted(remaining):
-        print(f'    {name}')
+        log(f'    {name}')
 
-    print(f'\nComplete! Import package ready in: {IMPORT_DIR}/')
+    log(f'\nComplete! Import package ready in: {import_dir}/')
+
+
+# ── Main ──────────────────────────────────────────────────────────────────────
+
+def main():
+    recipes_path = os.path.join(WORKSPACE_DIR, RECIPES_DIR)
+    import_path  = os.path.join(WORKSPACE_DIR, IMPORT_DIR)
+    create_paprika_import(recipes_path, import_path)
 
 
 if __name__ == '__main__':

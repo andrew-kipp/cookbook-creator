@@ -16,9 +16,10 @@ import gzip
 import json
 import xml.etree.ElementTree as ET
 import hashlib
+import re as _re
 from pathlib import Path
 
-# Configuration
+# Configuration (used by CLI main() only)
 WORKSPACE_DIR = r"c:\Users\kippa\OneDrive\Documents\git-projects\cookbook-creator"
 SOURCE_FILE = "Export 2026-03-02 12.59.08 All Recipes.paprikarecipes"
 OUTPUT_DIR = "All Recipes"
@@ -44,7 +45,7 @@ def find_next_filename(base_path):
     base_dir = os.path.dirname(base_path)
     base_name = os.path.basename(base_path)
     name_parts = os.path.splitext(base_name)
-    
+
     counter = 2
     while True:
         new_name = f"{name_parts[0]} ({counter}){name_parts[1]}"
@@ -56,15 +57,15 @@ def find_next_filename(base_path):
 def xml_to_dict(element):
     """Convert XML element to dictionary"""
     result = {}
-    
+
     # Add attributes
     if element.attrib:
         result['@attributes'] = element.attrib
-    
+
     # Add text content
     if element.text and element.text.strip():
         result['#text'] = element.text.strip()
-    
+
     # Add child elements
     children = {}
     for child in element:
@@ -75,13 +76,13 @@ def xml_to_dict(element):
             children[child.tag].append(child_data)
         else:
             children[child.tag] = child_data
-    
+
     result.update(children)
-    
+
     # If only text content, return just the text
     if not children and not element.attrib and element.text:
         return element.text.strip()
-    
+
     return result if result else None
 
 def parse_and_convert_to_json(input_file, output_file):
@@ -89,7 +90,7 @@ def parse_and_convert_to_json(input_file, output_file):
     try:
         with open(input_file, 'r', encoding='utf-8') as f:
             content = f.read()
-        
+
         # Try to parse as XML
         try:
             root = ET.fromstring(content)
@@ -121,7 +122,7 @@ def save_json_recipe(json_content, output_file, recipes_needing_review):
         try:
             with open(output_file, 'r', encoding='utf-8') as f:
                 existing_content = json.load(f)
-            
+
             if existing_content == json_content:
                 # Identical content, skip
                 return False
@@ -130,7 +131,7 @@ def save_json_recipe(json_content, output_file, recipes_needing_review):
                 new_path = find_next_filename(output_file)
                 with open(new_path, 'w', encoding='utf-8') as f:
                     json.dump(json_content, f, indent=2, ensure_ascii=False)
-                
+
                 recipe_name = os.path.basename(new_path)
                 recipes_needing_review.append(recipe_name)
                 print(f"  Saved new version: {recipe_name}")
@@ -154,7 +155,7 @@ def save_recipe_image(image_path, output_folder, recipes_needing_review):
     """Save recipe image, handling duplicates"""
     filename = os.path.basename(image_path)
     output_path = os.path.join(output_folder, filename)
-    
+
     if os.path.exists(output_path):
         # File exists, check if content is identical
         if files_are_identical(image_path, output_path):
@@ -170,7 +171,7 @@ def save_recipe_image(image_path, output_folder, recipes_needing_review):
                 counter += 1
                 new_filename = f"{name_parts[0]} ({counter}){name_parts[1]}"
                 new_path = os.path.join(output_folder, new_filename)
-            
+
             shutil.copy2(image_path, new_path)
             recipes_needing_review.append(new_filename)
             print(f"  Saved new image version: {new_filename}")
@@ -180,128 +181,127 @@ def save_recipe_image(image_path, output_folder, recipes_needing_review):
         shutil.copy2(image_path, output_path)
         return True
 
-def main():
-    os.chdir(WORKSPACE_DIR)
-    
-    recipes_needing_review = []
-    
-    # Step 1: Convert .paprikarecipes to .zip and extract
-    print(f"Step 1: Processing {SOURCE_FILE}")
-    
-    # Create temporary directory for first extraction
-    if os.path.exists(TEMP_EXTRACT_DIR):
-        shutil.rmtree(TEMP_EXTRACT_DIR)
-    os.makedirs(TEMP_EXTRACT_DIR)
-    
-    # Copy file with .zip extension
-    zip_file = os.path.join(TEMP_EXTRACT_DIR, "temp.zip")
-    shutil.copy2(SOURCE_FILE, zip_file)
-    print(f"  Copied to temporary .zip file")
-    
-    # Extract the zip file
-    shutil.unpack_archive(zip_file, TEMP_EXTRACT_DIR)
-    print(f"  Extracted .zip file")
-    
-    # Step 2: Find and process .paprikarecipe files
-    print(f"\nStep 2: Processing .paprikarecipe files")
-    
-    # Check if output directory already exists
-    output_dir_exists = os.path.exists(OUTPUT_DIR)
-    if not output_dir_exists:
-        os.makedirs(OUTPUT_DIR)
-    
-    paprikarecipe_files = list(Path(TEMP_EXTRACT_DIR).rglob("*.paprikarecipe"))
-    print(f"  Found {len(paprikarecipe_files)} .paprikarecipe files")
-    
-    # Step 3: Convert to .gz and extract
-    print(f"\nStep 3: Converting to .gz and extracting")
-    
-    for paprikarecipe_file in paprikarecipe_files:
-        # Create gz filename
-        gz_file = paprikarecipe_file.with_suffix(".gz")
-        
-        # Rename to .gz
-        os.rename(str(paprikarecipe_file), str(gz_file))
-        print(f"  Renamed: {paprikarecipe_file.name} -> {gz_file.name}")
-        
-        # Extract gz file to temporary location
-        temp_extracted = os.path.join(OUTPUT_DIR, gz_file.stem)
+
+def _process_single_paprikarecipe(paprikarecipe_path, output_dir, recipes_needing_review, log):
+    """
+    Extract a single .paprikarecipe (gzipped JSON) file into output_dir.
+    paprikarecipe_path: absolute path string to a .paprikarecipe file
+    """
+    import tempfile
+    p = Path(paprikarecipe_path)
+    # Decompress to a temp file
+    with tempfile.NamedTemporaryFile(delete=False, suffix='') as tmp:
+        tmp_path = tmp.name
+    try:
+        with gzip.open(str(p), 'rb') as f_in:
+            with open(tmp_path, 'wb') as f_out:
+                shutil.copyfileobj(f_in, f_out)
+
+        # Parse to JSON
+        with open(tmp_path, 'r', encoding='utf-8') as f:
+            content = f.read()
         try:
-            with gzip.open(str(gz_file), 'rb') as f_in:
-                with open(temp_extracted, 'wb') as f_out:
-                    shutil.copyfileobj(f_in, f_out)
-            print(f"  Extracted: {gz_file.name}")
-        except Exception as e:
-            print(f"  Error extracting {gz_file.name}: {e}")
-    
-    # Step 4: Convert extracted files to JSON
-    print(f"\nStep 4: Converting files to JSON format")
-
-    import re as _re
-    extracted_files = list(Path(OUTPUT_DIR).glob("*"))
-    for extracted_file in extracted_files:
-        if extracted_file.is_file() and not extracted_file.name.endswith('.json'):
+            json_data = json.loads(content)
+        except json.JSONDecodeError:
             try:
-                with open(extracted_file, 'r', encoding='utf-8') as f:
-                    content = f.read()
+                root = ET.fromstring(content)
+                json_data = {root.tag: xml_to_dict(root)}
+            except ET.ParseError:
+                json_data = {"content": content}
 
-                # Parse as XML or JSON
-                try:
-                    root = ET.fromstring(content)
-                    json_data = {root.tag: xml_to_dict(root)}
-                except ET.ParseError:
-                    try:
-                        json_data = json.loads(content)
-                    except json.JSONDecodeError:
-                        json_data = {"content": content}
+        recipe_name = json_data.get('name', '').strip() if isinstance(json_data, dict) else ''
+        if recipe_name:
+            safe_name = _re.sub(r'[<>:"/\\|?*]', '', recipe_name).strip()
+            json_output = Path(output_dir) / (safe_name + '.json')
+        else:
+            json_output = Path(output_dir) / (p.stem + '.json')
 
-                # Derive output filename from the recipe's 'name' field so that
-                # special characters (accented letters, curly quotes, en-dashes)
-                # in the recipe name are preserved correctly in the filename.
-                # shutil.unpack_archive decodes zip entry names as CP437 when the
-                # UTF-8 flag is absent, producing garbled stems like "Alb├│ndigas"
-                # instead of "Albóndigas".  Using the parsed name avoids this.
-                recipe_name = json_data.get('name', '').strip() if isinstance(json_data, dict) else ''
-                if recipe_name:
-                    # Strip characters that are illegal in Windows filenames
-                    safe_name = _re.sub(r'[<>:"/\\|?*]', '', recipe_name).strip()
-                    json_output = Path(OUTPUT_DIR) / (safe_name + '.json')
-                else:
-                    # Fallback: use the stem of the extracted file as before
-                    json_output = extracted_file.with_suffix('.json')
+        if save_json_recipe(json_data, str(json_output), recipes_needing_review):
+            log(f"  Extracted: {p.name} -> {json_output.name}")
+        else:
+            log(f"  Skipped (identical): {p.name}")
+    except Exception as e:
+        log(f"  Error extracting {p.name}: {e}")
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
 
-                # Save with duplicate handling
-                if save_json_recipe(json_data, str(json_output), recipes_needing_review):
-                    print(f"  Converted: {extracted_file.name} -> {json_output.name}")
-                else:
-                    print(f"  Skipped (identical): {extracted_file.name}")
 
-                # Remove the original extracted file
-                os.remove(str(extracted_file))
-            except Exception as e:
-                print(f"  Error converting {extracted_file.name}: {e}")
-    
-    # Step 5: Cleanup
-    print(f"\nStep 5: Cleaning up temporary files")
-    shutil.rmtree(TEMP_EXTRACT_DIR)
-    print(f"  Removed temporary directory")
-    
-    # Step 6: Create review list file
-    print(f"\nStep 6: Creating review list")
+def extract_paprika_files(input_files, output_dir, progress_cb=None):
+    """
+    Extract Paprika recipe files to output_dir.
+
+    input_files : list of absolute path strings; may be a mix of
+                  .paprikarecipes (batch zip) and .paprikarecipe (single gz) files.
+    output_dir  : absolute path to the folder where JSON files will be saved.
+    progress_cb : optional callable(message: str) for progress reporting.
+    """
+    def log(msg):
+        if progress_cb:
+            progress_cb(msg)
+        else:
+            print(msg)
+
+    recipes_needing_review = []
+    output_dir = str(output_dir)
+
+    # Ensure output directory exists
+    os.makedirs(output_dir, exist_ok=True)
+
+    for input_file in input_files:
+        ext = Path(input_file).suffix.lower()
+
+        if ext == '.paprikarecipes':
+            # ── Batch file: unzip → process each .paprikarecipe inside ──────
+            log(f"Processing batch file: {Path(input_file).name}")
+            temp_dir = os.path.join(output_dir, "_temp_extract")
+            if os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir)
+            os.makedirs(temp_dir)
+
+            try:
+                zip_file = os.path.join(temp_dir, "temp.zip")
+                shutil.copy2(input_file, zip_file)
+                shutil.unpack_archive(zip_file, temp_dir)
+                log("  Extracted batch zip")
+
+                inner_files = list(Path(temp_dir).rglob("*.paprikarecipe"))
+                log(f"  Found {len(inner_files)} recipe(s) inside")
+
+                for inner in inner_files:
+                    _process_single_paprikarecipe(str(inner), output_dir, recipes_needing_review, log)
+            finally:
+                shutil.rmtree(temp_dir, ignore_errors=True)
+
+        elif ext == '.paprikarecipe':
+            # ── Single recipe file ────────────────────────────────────────
+            log(f"Processing single recipe: {Path(input_file).name}")
+            _process_single_paprikarecipe(input_file, output_dir, recipes_needing_review, log)
+
+        else:
+            log(f"Skipped unsupported file type: {Path(input_file).name}")
+
+    # Write review list
     if recipes_needing_review:
-        review_file_path = os.path.join(WORKSPACE_DIR, REVIEW_LIST_FILE)
-        with open(review_file_path, 'w', encoding='utf-8') as f:
+        review_file = os.path.join(output_dir, REVIEW_LIST_FILE)
+        with open(review_file, 'w', encoding='utf-8') as f:
             f.write("Recipes Needing Review\n")
             f.write("=" * 50 + "\n\n")
             f.write("The following recipes have been identified as new or modified versions.\n")
-            f.write("Please review them to determine if they should be kept or merged with existing recipes.\n\n")
-            for recipe_name in recipes_needing_review:
-                f.write(f"- {recipe_name}\n")
-        print(f"  Created {REVIEW_LIST_FILE} with {len(recipes_needing_review)} recipe(s)")
+            f.write("Please review them to determine if they should be kept or merged.\n\n")
+            for name in recipes_needing_review:
+                f.write(f"- {name}\n")
+        log(f"Created {REVIEW_LIST_FILE} with {len(recipes_needing_review)} recipe(s) needing review")
     else:
-        print(f"  No recipes require review")
-    
-    print(f"\nComplete!")
+        log("No recipes require review")
+
+    log("Complete!")
+
+
+def main():
+    source_path = os.path.join(WORKSPACE_DIR, SOURCE_FILE)
+    output_path = os.path.join(WORKSPACE_DIR, OUTPUT_DIR)
+    extract_paprika_files([source_path], output_path)
 
 if __name__ == "__main__":
     main()
