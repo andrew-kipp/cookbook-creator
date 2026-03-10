@@ -240,14 +240,21 @@ class App:
         self._section_label(outer, "ACTIONS")
 
         self._action_btns = []
-        for label, cmd in [
-            ("Create Recipe PDFs",         self._action_create_pdfs),
-            ("Create JSON Recipe Files",   self._action_create_json),
-            ("Create Paprikarecipes File", self._action_create_paprikarecipes),
+        for lbl1, cmd1, lbl2, cmd2 in [
+            ("Create Recipe PDFs from Files",         self._action_create_pdfs_from_files,
+             "Create Recipe PDFs from Output Folder", self._action_create_pdfs_from_folder),
+            ("Create Recipe JSONs from Files",         self._action_create_json_from_files,
+             "Create Recipe JSONs from Output Folder", self._action_create_json_from_folder),
+            ("Create Paprikarecipes File from Files",         self._action_create_paprikarecipes_from_files,
+             "Create Paprikarecipes File from Output Folder", self._action_create_paprikarecipes_from_folder),
         ]:
-            b = self._btn(outer, label, cmd)
-            b.pack(fill=tk.X, pady=2)
-            self._action_btns.append(b)
+            btn_row = tk.Frame(outer, bg="white")
+            btn_row.pack(fill=tk.X, pady=2)
+            b1 = self._btn(btn_row, lbl1, cmd1)
+            b1.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 2))
+            b2 = self._btn(btn_row, lbl2, cmd2)
+            b2.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(2, 0))
+            self._action_btns.extend([b1, b2])
 
         # ── Cookbook creator ─────────────────────────────────────────────────
         self._hsep(outer)
@@ -262,7 +269,7 @@ class App:
         for label, val in [("All Recipes", "all"), ("4 & 5 Stars", "4_and_5_stars"), ("5 Stars", "5_stars")]:
             tk.Radiobutton(filter_row, text=label, variable=self._filter_var, value=val,
                            font=("Helvetica", 9), bg="white", fg=ACCENT,
-                           selectcolor=RADIO_SEL, activebackground="white").pack(side=tk.LEFT, padx=4)
+                           activebackground="white").pack(side=tk.LEFT, padx=4)
 
         # Format radio buttons
         format_row = tk.Frame(outer, bg="white")
@@ -275,7 +282,7 @@ class App:
                             ("No Images", "none")]:
             tk.Radiobutton(format_row, text=label, variable=self._format_var, value=val,
                            font=("Helvetica", 9), bg="white", fg=ACCENT,
-                           selectcolor=RADIO_SEL, activebackground="white").pack(side=tk.LEFT, padx=4)
+                           activebackground="white").pack(side=tk.LEFT, padx=4)
 
         cb_btn = self._btn(outer, "Create Cookbook", self._action_create_cookbook)
         cb_btn.pack(fill=tk.X, pady=2)
@@ -411,29 +418,69 @@ class App:
 
     # ── Actions ───────────────────────────────────────────────────────────────
 
-    def _action_create_pdfs(self):
+    def _action_create_pdfs_from_files(self):
         folder = self._get_output_folder()
         if not folder:
             return
 
+        paprika_files = [f for f in self._files
+                         if f.lower().endswith('.paprikarecipes') or f.lower().endswith('.paprikarecipe')]
         json_files = [f for f in self._files if f.lower().endswith('.json')]
 
+        if not paprika_files and not json_files:
+            messagebox.showerror("No files",
+                                 "Please add .paprikarecipes, .paprikarecipe, or .json files first.")
+            return
+
         def task():
-            from JSONToPDFRecipe import process_json_to_pdf, create_pdf_recipe, IMAGES_SUBDIR as ISUB
-            if json_files:
-                self._log(f"Creating PDFs for {len(json_files)} selected JSON file(s)...")
-                images_folder = os.path.join(folder, ISUB)
-                os.makedirs(images_folder, exist_ok=True)
-                for jf in json_files:
-                    create_pdf_recipe(jf, folder, images_folder,
-                                      progress_cb=self._log if False else None)
+            from JSONToPDFRecipe import create_pdf_recipe, process_json_to_pdf, IMAGES_SUBDIR as ISUB
+            images_folder = os.path.join(folder, ISUB)
+            os.makedirs(images_folder, exist_ok=True)
+
+            if paprika_files:
+                # Extract paprika → JSON, then create PDFs for all resulting JSONs
+                self._log(f"Extracting {len(paprika_files)} Paprika file(s) to: {folder}")
+                from PaprikaExtract import extract_paprika_files
+                extract_paprika_files(paprika_files, folder, progress_cb=self._log)
+                self._log("Creating PDFs for extracted JSON files...")
+                process_json_to_pdf(folder, progress_cb=self._log)
             else:
-                self._log(f"Creating PDFs for all JSON files in: {folder}")
+                self._log(f"Creating PDFs for {len(json_files)} selected JSON file(s)...")
+                for jf in json_files:
+                    create_pdf_recipe(jf, folder, images_folder)
+
+        self._run_task(task)
+
+    def _action_create_pdfs_from_folder(self):
+        folder = self._get_output_folder()
+        if not folder:
+            return
+
+        def task():
+            recipes_dir = Path(folder)
+            json_files    = list(recipes_dir.glob("*.json"))
+            paprika_files = (list(recipes_dir.glob("*.paprikarecipe")) +
+                             list(recipes_dir.glob("*.paprikarecipes")))
+
+            if not json_files and not paprika_files:
+                self._log("No .json or .paprikarecipe/.paprikarecipes files found in output folder.")
+                return
+
+            from JSONToPDFRecipe import process_json_to_pdf
+            if json_files:
+                self._log(f"Creating PDFs for {len(json_files)} JSON file(s) in: {folder}")
+                process_json_to_pdf(folder, progress_cb=self._log)
+            else:
+                self._log(f"Extracting {len(paprika_files)} Paprika file(s) from: {folder}")
+                from PaprikaExtract import extract_paprika_files
+                extract_paprika_files([str(f) for f in paprika_files], folder,
+                                      progress_cb=self._log)
+                self._log("Creating PDFs for extracted JSON files...")
                 process_json_to_pdf(folder, progress_cb=self._log)
 
         self._run_task(task)
 
-    def _action_create_json(self):
+    def _action_create_json_from_files(self):
         folder = self._get_output_folder()
         if not folder:
             return
@@ -456,11 +503,11 @@ class App:
             if pdf_files:
                 self._log(f"Converting {len(pdf_files)} PDF file(s) to JSON...")
                 from PDFToJSONRecipe import pdf_to_json
+                import re
                 for pdf in pdf_files:
                     try:
                         self._log(f"  Converting: {os.path.basename(pdf)}")
                         recipe = pdf_to_json(pdf)
-                        import re
                         base = re.sub(r'\s*\(\d+\s*Stars?\)\s*$', '', Path(pdf).stem,
                                       flags=re.IGNORECASE).strip()
                         out = os.path.join(folder, base + '.json')
@@ -472,18 +519,90 @@ class App:
 
         self._run_task(task)
 
-    def _action_create_paprikarecipes(self):
+    def _action_create_json_from_folder(self):
         folder = self._get_output_folder()
         if not folder:
             return
 
-        import_dir = os.path.join(os.path.dirname(folder), IMPORT_DIR_NAME)
+        def task():
+            recipes_dir   = Path(folder)
+            paprika_files = (list(recipes_dir.glob("*.paprikarecipe")) +
+                             list(recipes_dir.glob("*.paprikarecipes")))
+            pdf_files     = list(recipes_dir.glob("*.pdf"))
+
+            if not paprika_files and not pdf_files:
+                self._log("No .paprikarecipe, .paprikarecipes, or .pdf files found in output folder.")
+                return
+
+            if paprika_files:
+                self._log(f"Extracting {len(paprika_files)} Paprika file(s) from: {folder}")
+                from PaprikaExtract import extract_paprika_files
+                extract_paprika_files([str(f) for f in paprika_files], folder,
+                                      progress_cb=self._log)
+
+            if pdf_files:
+                self._log(f"Converting {len(pdf_files)} PDF file(s) to JSON...")
+                from PDFToJSONRecipe import pdf_to_json
+                import re
+                for pdf in pdf_files:
+                    try:
+                        self._log(f"  Converting: {pdf.name}")
+                        recipe = pdf_to_json(str(pdf))
+                        base = re.sub(r'\s*\(\d+\s*Stars?\)\s*$', '', pdf.stem,
+                                      flags=re.IGNORECASE).strip()
+                        out = recipes_dir / (base + '.json')
+                        with open(out, 'w', encoding='utf-8') as f:
+                            json.dump(recipe, f, indent=2, ensure_ascii=False)
+                        self._log(f"    Saved: {out.name}")
+                    except Exception as e:
+                        self._log(f"    Error: {e}")
+
+        self._run_task(task)
+
+    def _action_create_paprikarecipes_from_files(self):
+        folder = self._get_output_folder()
+        if not folder:
+            return
+
+        source_files = [f for f in self._files
+                        if f.lower().endswith('.json') or f.lower().endswith('.pdf')]
+        if not source_files:
+            messagebox.showerror("No files",
+                                 "Please add .json or .pdf files to the file list first.")
+            return
 
         def task():
-            self._log(f"Creating Paprikarecipes import from: {folder}")
-            self._log(f"Output folder: {import_dir}")
-            from CreatePaprikaImport import create_paprika_import
-            create_paprika_import(folder, import_dir, progress_cb=self._log)
+            self._log(f"Creating Paprikarecipes bundle from {len(source_files)} file(s)...")
+            self._log(f"Output folder: {folder}")
+            from CreatePaprikaImport import create_paprikarecipes_bundle
+            create_paprikarecipes_bundle(source_files, folder, progress_cb=self._log)
+
+        self._run_task(task)
+
+    def _action_create_paprikarecipes_from_folder(self):
+        folder = self._get_output_folder()
+        if not folder:
+            return
+
+        def task():
+            from pathlib import Path as _Path
+            recipes_dir = _Path(folder)
+            json_files = list(recipes_dir.glob("*.json"))
+            pdf_files  = list(recipes_dir.glob("*.pdf"))
+
+            if not json_files and not pdf_files:
+                self._log("No .json or .pdf files found in the output folder.")
+                return
+
+            if len(json_files) >= len(pdf_files):
+                source_files = [str(f) for f in json_files]
+                self._log(f"Using {len(source_files)} JSON file(s) from: {folder}")
+            else:
+                source_files = [str(f) for f in pdf_files]
+                self._log(f"Using {len(source_files)} PDF file(s) from: {folder}")
+
+            from CreatePaprikaImport import create_paprikarecipes_bundle
+            create_paprikarecipes_bundle(source_files, folder, progress_cb=self._log)
 
         self._run_task(task)
 

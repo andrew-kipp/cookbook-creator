@@ -260,18 +260,6 @@ def format_recipe_first_page(recipe_data, styles):
     header_height += spacer_height
     available_height = letter[1] - PAGE_TOP_MARGIN - PAGE_BOTTOM_MARGIN - 2 * FRAME_PADDING - header_height
 
-    # ── Reserve space for nutritional info so it always fits on page 1 ────────
-    nutritional_info = recipe_data.get('nutritional_info', '')
-    if nutritional_info:
-        nutr_lines = [ln.strip() for ln in nutritional_info.strip().splitlines() if ln.strip()]
-        nutr_single = ' | '.join(nutr_lines)
-        nutr_preview = Paragraph(f"<b>Nutritional Information:</b> {nutr_single}", styles['ingredient'])
-        try:
-            _, nutr_h = nutr_preview.wrap(usable_width, letter[1])
-        except Exception:
-            nutr_h = styles['ingredient'].fontSize * 1.5
-        available_height -= nutr_h + 0.08 * inch  # paragraph height + spacer before it
-
     # ── Table helpers ─────────────────────────────────────────────────────────
     def _make_table(lce, rce):
         t = Table([[lce, rce]], colWidths=[left_col_width, right_col_width])
@@ -328,16 +316,6 @@ def format_recipe_first_page(recipe_data, styles):
     # ── Build and append the two-column table ────────────────────────────────
     recipe_table = _make_table(left_col_elements, right_col_elements)
     elements.append(recipe_table)
-
-    # ── Nutritional information (below table, single pipe-joined line) ────────
-    nutritional_info = recipe_data.get('nutritional_info', '')
-    if nutritional_info:
-        lines = [ln.strip() for ln in nutritional_info.strip().splitlines() if ln.strip()]
-        single_line = _safe(' | '.join(lines))
-        elements.append(Spacer(1, 0.08 * inch))
-        elements.append(Paragraph(
-            f"<b>Nutritional Information:</b> {single_line}", styles['ingredient']
-        ))
 
     return elements, overflow_ingredients, right_col_overflow, overflow_directions_count
 
@@ -459,6 +437,16 @@ def format_recipe_second_page(recipe_data, image_path, styles,
 
         if left_remaining or right_remaining:
             elements.append(PageBreak())
+
+    # ── Nutritional information (always after all notes content) ─────────────
+    nutritional_info = recipe_data.get('nutritional_info', '')
+    if nutritional_info:
+        lines = [ln.strip() for ln in nutritional_info.strip().splitlines() if ln.strip()]
+        single_line = _safe(' | '.join(lines))
+        elements.append(Spacer(1, 0.08 * inch))
+        elements.append(Paragraph(
+            f"<b>Nutritional Information:</b> {single_line}", styles['ingredient']
+        ))
 
     # ── Recipe image ─────────────────────────────────────────────────────────
     if include_image and image_path and os.path.exists(image_path):

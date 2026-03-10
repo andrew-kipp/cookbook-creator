@@ -221,11 +221,51 @@ The application should be able to do and handle the following:
      Currently it can only handle a single '.paprikarecipes' file.
 
 
+
+App tested. Some things work as intended and some do not.
+
+Works as intended:
+Files section and output folder section work fine.
+Create recipe pdfs works fine.
+Create json recipes works fine.
+Create cookbook button works fine.
+
+Does not work as intended:
+The create paprikarecipes button doesn't work. It creates json files, but there is already another 
+button/function for that. I need this button to create a file called 'recipes_for_import.paprikarecipes' 
+which is a zipped file containing .paprikarecipe recipe files, which are renamed .gzip files based on the 
+json recipe files.
+Along with that fix, please change this so that there are two buttons for this. The first button should be 
+'Create Paprikarecipes File from Files' which should only use the files in the drag-and-drop section. The 
+second button should be 'Create Paprikarecipes File from Output Folder' which should include all json or pdf 
+files (whichever thhere are more of) in the output filder section.
+
+Next, the radio buttons for the Create Cookbook section don't work. They are all constantly active or 
+inactive (not sure which), but I am unable to select just one from each set.
+
+
+Further changes:
+1. Change name of 'Create Recipe PDFs' to 'Create Recipe PDFs from Files' and 'Create JSON Recipe Files' to 
+   'Create Recipe JSONs from Files'. Both of these buttons should only use the files in the drag-and-drop 
+   section.
+2. Add additional buttons to the action section, 'Create Recipe PDFs from Output Folder' and 
+   'Create Recipe JSONs from Output Folder'. Both of these should only use files in the Output Folder 
+   section.
+3. Make the buttons in the Actions section be side by side based on what they do. 'Create Recipe PDFs...' 
+   buttons should be in the first row, 'Create Recipe JSONs...' buttons should be in the second row, and 
+   'Create Paprikarecipes...' buttons should be in the third row.
+4. For the 'Create Recipe PDFs from Files' button, if the files are of type .paprikarecipe or .paprikarecipes 
+   then create the json and pdf files. If the files are .json then only create the pdf files.
+   For the 'Create Recipe PDFs from Output Folder' button, if the only files are .paprikarecipe or the only 
+   file is .paprikarecipes then create the json and pdf files. If there are any .json files the only create 
+   pdfs for those files and ignore any other files.
+5. Adjust the 'Nutritional Information' section in the recipe formatting so that it is always below the end 
+   of the 'Notes' section in the pdf recipe file.
+
+
 Everything above this line has already been completed.
 
-Appl has been created, next things to do are determining if layout is acceptable, adjust formatting if 
-necessary, and then testing functions. Beyond that will be cookbook and image formatting, possibly recipe 
-updates, and more.
+
 
 Further To Do, but needs more planning.
 - Want to pretty-up the formatting of the recipe without messing with the page sizing and spacing too 

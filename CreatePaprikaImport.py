@@ -148,6 +148,76 @@ def _clean_import_folder(import_dir, bundle_name):
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
+def create_paprikarecipes_bundle(source_files, output_dir, progress_cb=None, output_name="recipes_for_import"):
+    """
+    Create a .paprikarecipes bundle directly from a list of JSON and/or PDF files.
+
+    source_files : list of str or Path – .json and/or .pdf file paths to include
+    output_dir   : folder where 'recipes_for_import.paprikarecipes' will be saved
+    progress_cb  : optional callable(str) for progress messages
+    output_name  : stem for the output bundle file (default: 'recipes_for_import')
+    """
+    import tempfile
+
+    def log(msg):
+        if progress_cb:
+            progress_cb(msg)
+        else:
+            print(msg)
+
+    source_files = [Path(f) for f in source_files]
+    output_dir   = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    json_files = [f for f in source_files if f.suffix.lower() == '.json']
+    pdf_files  = [f for f in source_files if f.suffix.lower() == '.pdf']
+
+    log(f"Processing {len(json_files)} JSON file(s) and {len(pdf_files)} PDF file(s)")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_dir = Path(tmp)
+        paprika_files = []
+
+        # JSON files → gzip → .paprikarecipe
+        for jf in json_files:
+            log(f"  Compressing: {jf.name}")
+            tmp_copy = tmp_dir / jf.name
+            shutil.copy2(str(jf), str(tmp_copy))
+            gz_path = _gzip_json(tmp_copy)
+            paprika_files.append(gz_path)
+            log(f"    → {gz_path.name}")
+
+        # PDF files → JSON → gzip → .paprikarecipe
+        if pdf_files:
+            from PDFToJSONRecipe import pdf_to_json
+            for pdf in pdf_files:
+                log(f"  Converting PDF: {pdf.name}")
+                try:
+                    recipe    = pdf_to_json(str(pdf))
+                    base_name = _strip_rating_suffix(pdf.stem)
+                    tmp_json  = tmp_dir / f"{base_name}.json"
+                    with open(tmp_json, 'w', encoding='utf-8') as f:
+                        json.dump(recipe, f, indent=2, ensure_ascii=False)
+                    gz_path = _gzip_json(tmp_json)
+                    paprika_files.append(gz_path)
+                    log(f"    → {gz_path.name}")
+                except Exception as e:
+                    log(f"    Error converting {pdf.name}: {e}")
+
+        if not paprika_files:
+            log("No files to bundle — nothing created.")
+            return
+
+        # Bundle all .paprikarecipe files into one .paprikarecipes ZIP
+        bundle_path = output_dir / f"{output_name}.paprikarecipes"
+        log(f"\nBundling {len(paprika_files)} recipe(s) → {bundle_path.name}")
+        with zipfile.ZipFile(str(bundle_path), 'w', zipfile.ZIP_DEFLATED) as zf:
+            for pf in paprika_files:
+                zf.write(str(pf), pf.name)
+
+    log(f"Done! Import file saved: {bundle_path}")
+
+
 def create_paprika_import(recipes_dir, import_dir, progress_cb=None, output_name=OUTPUT_NAME):
     """
     Build a Paprika import package from recipes in recipes_dir.
