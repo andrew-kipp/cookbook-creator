@@ -266,8 +266,20 @@ Further changes:
 Everything above this line has already been completed.
 
 
+LLM API component added, but still needs to be tested. Also confirm that API Key is not stored.
+
+
 
 Further To Do, but needs more planning.
+- Add a note in Cookbook Creator section that specifies that a cookbook will only be created from pdf files.
+- Update the Files section so that it says it can import recipe screenshots or images. And remove .json from the set.
+- Remove buttons for creating recipe JSONs because users don't really need that. Users will either interact 
+  with the PDFs or the paprikarecipes file.
+- Remove the 'Create Recipe PDFs from Output Folder' button. Center the 'Create Recipe PDFs from Files' button.
+- Change the functions associated with the 'Create Paprikarecipes...' so that they only use PDF files.
+- Update the function for 'Create Recipe PDFs from Files' so that it can handle image files.
+   - For recipe screenshot / image handling, ask the user for thier prefered LLM of the set ['ChatGPT', 'Gemini', 'Claude']. Based on 
+
 - Want to pretty-up the formatting of the recipe without messing with the page sizing and spacing too 
   much. Make this optional or let the app user decide what the pretty formatting should be?
 - Add Table of Contents for the main categories, but don't list the recipes.

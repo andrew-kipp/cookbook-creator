@@ -24,6 +24,8 @@ except ImportError:
 IMAGES_SUBDIR = "Recipe Images"
 IMPORT_DIR_NAME = "Paprika Recipes to Import"
 COOKBOOK_FILENAME = "Cookbook.pdf"
+IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'}
+SETTINGS_FILE = Path.home() / ".cookbook_creator_settings.json"
 
 ACCENT   = "#2C3E50"
 BTN_BG   = "#3498DB"
@@ -169,6 +171,7 @@ class App:
         self._files = []          # list of file paths added by user
         self._busy = False        # True while a background operation runs
         self._log_queue = queue.Queue()
+        self._settings = self._load_settings()
 
         self._build_ui()
         self._poll_log_queue()
@@ -199,7 +202,8 @@ class App:
         dnd_frame.pack(fill=tk.X, pady=(0, 4))
         dnd_frame.pack_propagate(False)
         dnd_lbl = tk.Label(dnd_frame,
-                           text="Drag & drop files here\n(.paprikarecipes, .paprikarecipe, .pdf, .json)",
+                           text="Drag & drop files here\n"
+                                "(.paprikarecipes, .paprikarecipe, .pdf, .json, .jpg, .png, ...)",
                            font=("Helvetica", 9), bg="#EBF5FB", fg="#5D6D7E", justify=tk.CENTER)
         dnd_lbl.pack(expand=True)
 
@@ -256,6 +260,30 @@ class App:
             b2.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(2, 0))
             self._action_btns.extend([b1, b2])
 
+        # ── LLM Extraction ───────────────────────────────────────────────────
+        self._hsep(outer)
+        self._section_label(outer, "LLM RECIPE EXTRACTION")
+
+        llm_cfg_row = tk.Frame(outer, bg="white")
+        llm_cfg_row.pack(fill=tk.X, pady=(0, 4))
+        self._llm_status_lbl = tk.Label(
+            llm_cfg_row, text=self._llm_status_text(),
+            font=("Helvetica", 8), bg="white", fg="#5D6D7E", anchor=tk.W
+        )
+        self._llm_status_lbl.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self._btn(llm_cfg_row, "Configure LLM...", self._show_llm_settings_dialog,
+                  secondary=True).pack(side=tk.RIGHT)
+
+        llm_btn_row = tk.Frame(outer, bg="white")
+        llm_btn_row.pack(fill=tk.X, pady=2)
+        b_llm1 = self._btn(llm_btn_row, "Extract Recipes from Images (Files)",
+                           self._action_extract_images_from_files)
+        b_llm1.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 2))
+        b_llm2 = self._btn(llm_btn_row, "Extract Recipes from Images (Folder)",
+                           self._action_extract_images_from_folder)
+        b_llm2.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(2, 0))
+        self._action_btns.extend([b_llm1, b_llm2])
+
         # ── Cookbook creator ─────────────────────────────────────────────────
         self._hsep(outer)
         self._section_label(outer, "COOKBOOK CREATOR")
@@ -297,6 +325,32 @@ class App:
         )
         self._log_text.pack(fill=tk.BOTH, expand=True, pady=(0, 8))
 
+    # ── Settings persistence ──────────────────────────────────────────────────
+
+    def _load_settings(self) -> dict:
+        try:
+            with open(SETTINGS_FILE, encoding='utf-8') as f:
+                return json.load(f)
+        except Exception:
+            return {}
+
+    def _save_settings(self, data: dict):
+        try:
+            with open(SETTINGS_FILE, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=2)
+        except Exception as e:
+            messagebox.showerror("Settings Error", f"Could not save settings:\n{e}")
+
+    def _llm_status_text(self) -> str:
+        provider = self._settings.get('llm_provider', '')
+        model    = self._settings.get('llm_model', '')
+        has_key  = bool(self._settings.get('llm_api_key', ''))
+        if provider and has_key:
+            from ImageToRecipeJSON import PROVIDERS
+            name = PROVIDERS.get(provider, {}).get('name', provider)
+            return f"Provider: {name}  |  Model: {model or 'default'}  |  API key: configured"
+        return "No LLM configured — click 'Configure LLM...' to set up"
+
     # ── Widget helpers ────────────────────────────────────────────────────────
 
     def _section_label(self, parent, text):
@@ -333,11 +387,14 @@ class App:
         paths = filedialog.askopenfilenames(
             title="Select recipe files",
             filetypes=[
-                ("All supported files", "*.paprikarecipes *.paprikarecipe *.pdf *.json"),
+                ("All supported files",
+                 "*.paprikarecipes *.paprikarecipe *.pdf *.json "
+                 "*.jpg *.jpeg *.png *.gif *.webp *.bmp"),
                 ("Paprika batch files", "*.paprikarecipes"),
                 ("Paprika recipe files", "*.paprikarecipe"),
                 ("PDF files", "*.pdf"),
                 ("JSON files", "*.json"),
+                ("Image files", "*.jpg *.jpeg *.png *.gif *.webp *.bmp"),
                 ("All files", "*.*"),
             ]
         )
@@ -603,6 +660,181 @@ class App:
 
             from CreatePaprikaImport import create_paprikarecipes_bundle
             create_paprikarecipes_bundle(source_files, folder, progress_cb=self._log)
+
+        self._run_task(task)
+
+    def _show_llm_settings_dialog(self):
+        from ImageToRecipeJSON import PROVIDERS
+
+        dlg = tk.Toplevel(self.root)
+        dlg.title("Configure LLM")
+        dlg.resizable(False, False)
+        dlg.grab_set()  # modal
+        dlg.configure(bg="white")
+
+        pad = {"padx": 12, "pady": 6}
+
+        # Provider row
+        tk.Label(dlg, text="Provider:", font=("Helvetica", 9, "bold"),
+                 bg="white", fg=ACCENT).grid(row=0, column=0, sticky=tk.W, **pad)
+        provider_var = tk.StringVar(value=self._settings.get('llm_provider', 'anthropic'))
+        provider_cb = ttk.Combobox(dlg, textvariable=provider_var, state="readonly", width=28,
+                                   values=[k for k in PROVIDERS])
+        provider_cb.grid(row=0, column=1, sticky=tk.W, **pad)
+
+        # Model row
+        tk.Label(dlg, text="Model:", font=("Helvetica", 9, "bold"),
+                 bg="white", fg=ACCENT).grid(row=1, column=0, sticky=tk.W, **pad)
+        model_var = tk.StringVar(value=self._settings.get('llm_model', ''))
+        model_cb = ttk.Combobox(dlg, textvariable=model_var, state="readonly", width=28)
+        model_cb.grid(row=1, column=1, sticky=tk.W, **pad)
+
+        def _refresh_models(*_):
+            key = provider_var.get()
+            models = PROVIDERS.get(key, {}).get('models', [])
+            model_cb['values'] = models
+            current = model_var.get()
+            if current not in models:
+                model_var.set(PROVIDERS.get(key, {}).get('default_model', models[0] if models else ''))
+
+        provider_var.trace_add('write', _refresh_models)
+        _refresh_models()
+
+        # API key row
+        tk.Label(dlg, text="API Key:", font=("Helvetica", 9, "bold"),
+                 bg="white", fg=ACCENT).grid(row=2, column=0, sticky=tk.W, **pad)
+        key_var = tk.StringVar(value=self._settings.get('llm_api_key', ''))
+        key_entry = tk.Entry(dlg, textvariable=key_var, show="*", width=30,
+                             font=("Helvetica", 9), relief=tk.GROOVE)
+        key_entry.grid(row=2, column=1, sticky=tk.EW, **pad)
+
+        # Hint
+        hint_var = tk.StringVar()
+        hint_lbl = tk.Label(dlg, textvariable=hint_var, font=("Helvetica", 8),
+                            bg="white", fg="#7F8C8D", wraplength=300, justify=tk.LEFT)
+        hint_lbl.grid(row=3, column=0, columnspan=2, sticky=tk.W, padx=12, pady=(0, 4))
+
+        def _update_hint(*_):
+            key  = provider_var.get()
+            hint = PROVIDERS.get(key, {}).get('install_hint', '')
+            hint_var.set(f"Install: {hint}" if hint else "")
+
+        provider_var.trace_add('write', _update_hint)
+        _update_hint()
+
+        # Buttons
+        btn_row = tk.Frame(dlg, bg="white")
+        btn_row.grid(row=4, column=0, columnspan=2, pady=(4, 12))
+
+        def _save():
+            self._settings['llm_provider'] = provider_var.get()
+            self._settings['llm_model']    = model_var.get()
+            self._settings['llm_api_key']  = key_var.get().strip()
+            self._save_settings(self._settings)
+            self._llm_status_lbl.configure(text=self._llm_status_text())
+            dlg.destroy()
+
+        tk.Button(btn_row, text="Save", command=_save,
+                  bg=BTN_BG, fg=BTN_FG, activebackground=BTN_ACT, activeforeground=BTN_FG,
+                  font=("Helvetica", 9), relief=tk.FLAT, padx=16, pady=4,
+                  cursor="hand2").pack(side=tk.LEFT, padx=(0, 8))
+        tk.Button(btn_row, text="Cancel", command=dlg.destroy,
+                  bg="#95A5A6", fg=BTN_FG, activebackground="#7F8C8D", activeforeground=BTN_FG,
+                  font=("Helvetica", 9), relief=tk.FLAT, padx=16, pady=4,
+                  cursor="hand2").pack(side=tk.LEFT)
+
+        dlg.update_idletasks()
+        # Centre the dialog over the main window
+        mx = self.root.winfo_x() + (self.root.winfo_width()  - dlg.winfo_width())  // 2
+        my = self.root.winfo_y() + (self.root.winfo_height() - dlg.winfo_height()) // 2
+        dlg.geometry(f"+{mx}+{my}")
+
+    def _action_extract_images_from_files(self):
+        folder = self._get_output_folder()
+        if not folder:
+            return
+
+        image_files = [
+            f for f in self._files
+            if Path(f).suffix.lower() in IMAGE_EXTENSIONS
+        ]
+        if not image_files:
+            messagebox.showerror("No images",
+                                 "Please add image files (.jpg, .png, etc.) to the file list first.")
+            return
+
+        provider = self._settings.get('llm_provider', '')
+        api_key  = self._settings.get('llm_api_key', '')
+        model    = self._settings.get('llm_model') or None
+        if not provider or not api_key:
+            messagebox.showerror("LLM not configured",
+                                 "Please configure an LLM provider and API key first.")
+            return
+
+        def task():
+            from ImageToRecipeJSON import extract_recipes_from_image
+            total_recipes = 0
+            for img_path in image_files:
+                self._log(f"Processing: {os.path.basename(img_path)}")
+                try:
+                    recipes = extract_recipes_from_image(
+                        img_path, provider, api_key, model, progress_cb=self._log
+                    )
+                    for recipe in recipes:
+                        name = recipe.get('name', 'Unknown Recipe')
+                        out  = os.path.join(folder, f"{name}.json")
+                        with open(out, 'w', encoding='utf-8') as f:
+                            json.dump(recipe, f, indent=2, ensure_ascii=False)
+                        self._log(f"  Saved: {os.path.basename(out)}")
+                        total_recipes += 1
+                except Exception as e:
+                    self._log(f"  Error: {e}")
+            self._log(f"Done. {total_recipes} recipe(s) saved to: {folder}")
+
+        self._run_task(task)
+
+    def _action_extract_images_from_folder(self):
+        folder = self._get_output_folder()
+        if not folder:
+            return
+
+        provider = self._settings.get('llm_provider', '')
+        api_key  = self._settings.get('llm_api_key', '')
+        model    = self._settings.get('llm_model') or None
+        if not provider or not api_key:
+            messagebox.showerror("LLM not configured",
+                                 "Please configure an LLM provider and API key first.")
+            return
+
+        def task():
+            recipes_dir = Path(folder)
+            image_files = [
+                f for f in recipes_dir.iterdir()
+                if f.is_file() and f.suffix.lower() in IMAGE_EXTENSIONS
+            ]
+            if not image_files:
+                self._log("No image files found in the output folder.")
+                return
+
+            self._log(f"Found {len(image_files)} image(s) in: {folder}")
+            from ImageToRecipeJSON import extract_recipes_from_image
+            total_recipes = 0
+            for img_path in sorted(image_files):
+                self._log(f"Processing: {img_path.name}")
+                try:
+                    recipes = extract_recipes_from_image(
+                        str(img_path), provider, api_key, model, progress_cb=self._log
+                    )
+                    for recipe in recipes:
+                        name = recipe.get('name', 'Unknown Recipe')
+                        out  = recipes_dir / f"{name}.json"
+                        with open(out, 'w', encoding='utf-8') as f:
+                            json.dump(recipe, f, indent=2, ensure_ascii=False)
+                        self._log(f"  Saved: {out.name}")
+                        total_recipes += 1
+                except Exception as e:
+                    self._log(f"  Error: {e}")
+            self._log(f"Done. {total_recipes} recipe(s) saved to: {folder}")
 
         self._run_task(task)
 
