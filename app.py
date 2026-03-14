@@ -77,27 +77,64 @@ def create_cookbook(recipes_dir, output_path, filter_mode="all", image_mode="non
         else:
             print(msg)
 
-    recipes_dir  = Path(recipes_dir)
-    images_dir   = recipes_dir / IMAGES_SUBDIR
+    import re as _re
 
-    # Collect JSON files
+    recipes_dir = Path(recipes_dir)
+    images_dir  = recipes_dir / IMAGES_SUBDIR
+
+    def _base_stem(stem):
+        """Strip trailing '(N Stars)' from a filename stem."""
+        return _re.sub(r'\s*\(\d+\s*Stars?\)\s*$', '', stem, flags=_re.IGNORECASE).strip()
+
+    def _rating_from_pdf(stem):
+        m = _re.search(r'\((\d+)\s*Stars?\)\s*$', stem, _re.IGNORECASE)
+        return int(m.group(1)) if m else 0
+
+    def _passes_filter(rating):
+        r = int(rating or 0)
+        if filter_mode == "5_stars":
+            return r >= 5
+        if filter_mode == "4_and_5_stars":
+            return r >= 4
+        return True  # "all"
+
+    # Collect JSON recipes
     json_files = sorted(recipes_dir.glob("*.json"))
-    log(f"Found {len(json_files)} JSON files")
+    json_stems = {jf.stem for jf in json_files}
+    log(f"Found {len(json_files)} JSON file(s)")
 
-    # Apply filter
+    # Collect PDF-only recipes (no matching JSON)
+    pdf_only = sorted(
+        pdf for pdf in recipes_dir.glob("*.pdf")
+        if _base_stem(pdf.stem) not in json_stems
+    )
+    if pdf_only:
+        log(f"Found {len(pdf_only)} PDF-only recipe(s)")
+
+    # Apply filter and build recipe list
     filtered = []
+
     for jf in json_files:
         try:
             with open(jf, encoding='utf-8') as f:
                 data = json.load(f)
-            rating = data.get('rating', 0) or 0
-            if filter_mode == "5_stars" and rating < 5:
-                continue
-            if filter_mode == "4_and_5_stars" and rating < 4:
+            if not _passes_filter(data.get('rating', 0)):
                 continue
             filtered.append((jf, data))
         except Exception as e:
             log(f"  Warning: could not read {jf.name}: {e}")
+
+    for pdf in pdf_only:
+        if not _passes_filter(_rating_from_pdf(pdf.stem)):
+            continue
+        try:
+            from PDFToJSONRecipe import pdf_to_json
+            data = pdf_to_json(str(pdf))
+            filtered.append((pdf, data))
+        except Exception as e:
+            log(f"  Warning: could not extract {pdf.name}: {e}")
+
+    filtered.sort(key=lambda x: x[0].stem.lower())
 
     log(f"Recipes after filter '{filter_mode}': {len(filtered)}")
     if not filtered:
@@ -111,7 +148,7 @@ def create_cookbook(recipes_dir, output_path, filter_mode="all", image_mode="non
     include_image = image_mode in ("grouped", "adjacent")
 
     for idx, (jf, recipe_data) in enumerate(filtered):
-        recipe_name = recipe_data.get('name', jf.stem)
+        recipe_name = recipe_data.get('name', _base_stem(jf.stem))
         rating = recipe_data.get('rating', '')
         log(f"  Adding ({idx+1}/{len(filtered)}): {recipe_name}")
 
@@ -204,7 +241,7 @@ class App:
         dnd_frame.pack_propagate(False)
         dnd_lbl = tk.Label(dnd_frame,
                            text="Drag & drop files here\n"
-                                "(.paprikarecipes, .paprikarecipe, .pdf, .json, .jpg, .png, ...)",
+                                "(.paprikarecipes, .paprikarecipe, .pdf, .jpg, .png, ...)",
                            font=("Helvetica", 9), bg="#EBF5FB", fg="#5D6D7E", justify=tk.CENTER)
         dnd_lbl.pack(expand=True)
 
@@ -248,8 +285,6 @@ class App:
         for lbl1, cmd1, lbl2, cmd2 in [
             ("Create Recipe PDFs from Files",         self._action_create_pdfs_from_files,
              "Create Recipe PDFs from Output Folder", self._action_create_pdfs_from_folder),
-            ("Create Recipe JSONs from Files",         self._action_create_json_from_files,
-             "Create Recipe JSONs from Output Folder", self._action_create_json_from_folder),
             ("Create Paprikarecipes File from Files",         self._action_create_paprikarecipes_from_files,
              "Create Paprikarecipes File from Output Folder", self._action_create_paprikarecipes_from_folder),
         ]:
@@ -263,7 +298,7 @@ class App:
 
         # ── LLM Extraction ───────────────────────────────────────────────────
         self._hsep(outer)
-        self._section_label(outer, "LLM RECIPE EXTRACTION")
+        self._section_label(outer, "LLM RECIPE EXTRACTION - REQUIRES API KEY")
 
         llm_cfg_row = tk.Frame(outer, bg="white")
         llm_cfg_row.pack(fill=tk.X, pady=(0, 4))
@@ -349,7 +384,7 @@ class App:
         model    = self._settings.get('llm_model', '')
         has_key  = bool(self._settings.get('llm_api_key', ''))
         if provider and has_key:
-            from ImageToRecipeJSON import PROVIDERS
+            from ImageToPDFRecipe import PROVIDERS
             name = PROVIDERS.get(provider, {}).get('name', provider)
             return f"Provider: {name}  |  Model: {model or 'default'}  |  API key: configured"
         return "No LLM configured — click 'Configure LLM...' to set up"
@@ -391,12 +426,11 @@ class App:
             title="Select recipe files",
             filetypes=[
                 ("All supported files",
-                 "*.paprikarecipes *.paprikarecipe *.pdf *.json "
+                 "*.paprikarecipes *.paprikarecipe *.pdf "
                  "*.jpg *.jpeg *.png *.gif *.webp *.bmp"),
                 ("Paprika batch files", "*.paprikarecipes"),
                 ("Paprika recipe files", "*.paprikarecipe"),
                 ("PDF files", "*.pdf"),
-                ("JSON files", "*.json"),
                 ("Image files", "*.jpg *.jpeg *.png *.gif *.webp *.bmp"),
                 ("All files", "*.*"),
             ]
@@ -485,29 +519,19 @@ class App:
 
         paprika_files = [f for f in self._files
                          if f.lower().endswith('.paprikarecipes') or f.lower().endswith('.paprikarecipe')]
-        json_files = [f for f in self._files if f.lower().endswith('.json')]
 
-        if not paprika_files and not json_files:
+        if not paprika_files:
             messagebox.showerror("No files",
-                                 "Please add .paprikarecipes, .paprikarecipe, or .json files first.")
+                                 "Please add .paprikarecipes or .paprikarecipe files first.")
             return
 
         def task():
-            from JSONToPDFRecipe import create_pdf_recipe, process_json_to_pdf, IMAGES_SUBDIR as ISUB
-            images_folder = os.path.join(folder, ISUB)
-            os.makedirs(images_folder, exist_ok=True)
-
-            if paprika_files:
-                # Extract paprika → JSON, then create PDFs for all resulting JSONs
-                self._log(f"Extracting {len(paprika_files)} Paprika file(s) to: {folder}")
-                from PaprikaExtract import extract_paprika_files
-                extract_paprika_files(paprika_files, folder, progress_cb=self._log)
-                self._log("Creating PDFs for extracted JSON files...")
-                process_json_to_pdf(folder, progress_cb=self._log)
-            else:
-                self._log(f"Creating PDFs for {len(json_files)} selected JSON file(s)...")
-                for jf in json_files:
-                    create_pdf_recipe(jf, folder, images_folder)
+            from JSONToPDFRecipe import process_json_to_pdf
+            self._log(f"Extracting {len(paprika_files)} Paprika file(s) to: {folder}")
+            from PaprikaExtract import extract_paprika_files
+            extract_paprika_files(paprika_files, folder, progress_cb=self._log)
+            self._log("Creating PDFs for extracted JSON files...")
+            process_json_to_pdf(folder, progress_cb=self._log)
 
         self._run_task(task)
 
@@ -624,11 +648,10 @@ class App:
         if not folder:
             return
 
-        source_files = [f for f in self._files
-                        if f.lower().endswith('.json') or f.lower().endswith('.pdf')]
+        source_files = [f for f in self._files if f.lower().endswith('.pdf')]
         if not source_files:
             messagebox.showerror("No files",
-                                 "Please add .json or .pdf files to the file list first.")
+                                 "Please add .pdf files to the file list first.")
             return
 
         def task():
@@ -667,7 +690,7 @@ class App:
         self._run_task(task)
 
     def _show_llm_settings_dialog(self):
-        from ImageToRecipeJSON import PROVIDERS
+        from ImageToPDFRecipe import PROVIDERS
 
         dlg = tk.Toplevel(self.root)
         dlg.title("Configure LLM")
