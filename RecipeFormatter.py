@@ -237,7 +237,17 @@ def format_recipe_first_page(recipe_data, styles):
         notes_paragraphs.append(Paragraph("Notes", styles['section_heading']))
         notes_paragraphs.append(Paragraph(_safe(notes), styles['direction']))
 
-    all_right_paragraphs = direction_paragraphs + notes_paragraphs
+    nutritional_paragraphs = []
+    nutritional_info = recipe_data.get('nutritional_info', '')
+    if nutritional_info:
+        lines = [ln.strip() for ln in nutritional_info.strip().splitlines() if ln.strip()]
+        single_line = _safe(' | '.join(lines))
+        nutritional_paragraphs.append(Spacer(1, styles['direction'].leading))
+        nutritional_paragraphs.append(Paragraph(
+            f"<b>Nutritional Information:</b> {single_line}", styles['direction']
+        ))
+
+    all_right_paragraphs = direction_paragraphs + notes_paragraphs + nutritional_paragraphs
 
     # ── Accurately measure all pre-table header elements ─────────────────────
     # Paragraph.wrap() returns text height only; spaceAfter is rendered separately.
@@ -437,16 +447,6 @@ def format_recipe_second_page(recipe_data, image_path, styles,
 
         if left_remaining or right_remaining:
             elements.append(PageBreak())
-
-    # ── Nutritional information (always after all notes content) ─────────────
-    nutritional_info = recipe_data.get('nutritional_info', '')
-    if nutritional_info:
-        lines = [ln.strip() for ln in nutritional_info.strip().splitlines() if ln.strip()]
-        single_line = _safe(' | '.join(lines))
-        elements.append(Spacer(1, 0.08 * inch))
-        elements.append(Paragraph(
-            f"<b>Nutritional Information:</b> {single_line}", styles['ingredient']
-        ))
 
     # ── Recipe image ─────────────────────────────────────────────────────────
     if include_image and image_path and os.path.exists(image_path):

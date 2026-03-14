@@ -280,13 +280,16 @@ never be stored except for the current session of the app.
    c. When 'All Recipes' is selected use all recipes
 
 
+Please update the Nutritional Information section so that it is formatted into the same column as the 
+Directions and Notes sections.
+Place the Nutritional Information into the same grouping as the Directions and Notes, don't put it into a 
+separate section. Right now it is separated and placed on the second page, but it should be placed right 
+below the Notes section.
+
 Everything above this line has already been completed.
 
 
 Further To Do, but needs more planning.
-#. Want to pretty-up the formatting of the recipe without messing with the page sizing and spacing too 
-  much. Make this optional or let the app user decide what the pretty formatting should be?
-#. Add Table of Contents for the main categories, but don't list the recipes.
 #. Cookbook contents formatting/organization:
    a. Add a cover page with the main text 'Family Recipes' and sub text of 'From the Kipp/Paul Household'
    b. Add a blank page after the title page and then add a table of contents on the third page. The table of 
@@ -301,11 +304,14 @@ Further To Do, but needs more planning.
         - Breads
         - Sauces/Toppings
         - Drinks
-   c. Add a page for each category with the title of the category at the top and then all the recipes in the 
-      category listed below with their respective page number.
+   c. Add a title page for each category with the title of the category at the top and then all the recipes in the 
+      category listed below with their respective page number. Always add a blank page after the last recipe in a 
+      category and if necessary add an additional blank page so that the category title page is always on an odd 
+      numbered page.
    d. 
 
-#. Will have to handle recipe categories, maybe even adding a categories title page?
+#. Want to pretty-up the formatting of the recipe without messing with the page sizing and spacing too 
+  much. Make this optional or let the app user decide what the pretty formatting should be?
 #. Include an index, but need to determine how to sort things.
 #. Need to do some pre-emptory formatting adjustments so that any two-page recipes aren't printed on the 
   front and back of one page. Want to be able to see the whole recipe at once without flipping pages.
