@@ -1,18 +1,32 @@
 """
-Image to Recipe JSON Extractor
+Image to PDF Recipe Extractor
 
 Uses an LLM (Claude, GPT-4o, or Gemini) to extract recipe data from
-screenshot/image files and return structured JSON matching the app's
-recipe schema.  A single image may contain more than one recipe.
+screenshot/image files, saves each recipe as JSON, then renders a formatted
+PDF using the existing RecipeFormatter pipeline.  A single image may contain
+more than one recipe.
 """
 
 import base64
 import json
+import os
 import re
 from pathlib import Path
 
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate
+from RecipeFormatter import (
+    get_recipe_styles,
+    format_recipe_first_page,
+    format_recipe_second_page,
+    LEFT_RIGHT_MARGIN,
+    PAGE_TOP_MARGIN,
+    PAGE_BOTTOM_MARGIN,
+)
+
 # Image file extensions accepted by the app
 SUPPORTED_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'}
+IMAGES_SUBDIR = "Recipe Images"
 
 # ── Extraction prompt ─────────────────────────────────────────────────────────
 
@@ -97,6 +111,51 @@ def _parse_json_response(text: str) -> list:
     if isinstance(recipes, dict):
         recipes = [recipes]
     return recipes
+
+
+def _recipe_to_pdf(recipe_data: dict, output_dir: str) -> str:
+    """
+    Save recipe_data as a JSON file, then render a formatted PDF.
+    Returns the path of the created PDF.
+    """
+    name   = recipe_data.get('name', 'Unknown Recipe')
+    rating = recipe_data.get('rating', '')
+
+    # Save JSON alongside the PDF
+    json_path = os.path.join(output_dir, f"{name}.json")
+    with open(json_path, 'w', encoding='utf-8') as f:
+        json.dump(recipe_data, f, indent=2, ensure_ascii=False)
+
+    # Build PDF path
+    rating_suffix = f" ({rating} Stars)" if rating not in (None, '') else ""
+    pdf_path = os.path.join(output_dir, f"{name}{rating_suffix}.pdf")
+
+    # Images subfolder (required by formatter even when not embedding images)
+    images_folder = os.path.join(output_dir, IMAGES_SUBDIR)
+    os.makedirs(images_folder, exist_ok=True)
+
+    doc = SimpleDocTemplate(
+        pdf_path,
+        pagesize=letter,
+        leftMargin=LEFT_RIGHT_MARGIN,
+        rightMargin=LEFT_RIGHT_MARGIN,
+        topMargin=PAGE_TOP_MARGIN,
+        bottomMargin=PAGE_BOTTOM_MARGIN,
+    )
+    styles = get_recipe_styles()
+    story  = []
+
+    first_page_elements, overflow_ingredients, overflow_right, overflow_directions_count = \
+        format_recipe_first_page(recipe_data, styles)
+    story.extend(first_page_elements)
+    story.extend(format_recipe_second_page(
+        recipe_data, None, styles,
+        overflow_ingredients, overflow_right, overflow_directions_count,
+        include_image=False,
+    ))
+
+    doc.build(story)
+    return pdf_path
 
 
 # ── Provider implementations ──────────────────────────────────────────────────
@@ -204,17 +263,18 @@ PROVIDERS = {
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
-def extract_recipes_from_image(image_path, provider, api_key, model=None, progress_cb=None):
+def extract_recipes_from_image(image_path, output_dir, provider, api_key, model=None, progress_cb=None):
     """
-    Extract recipe(s) from an image file using an LLM.
+    Extract recipe(s) from an image file using an LLM, then render each as a PDF.
 
     image_path  : path to the image file
+    output_dir  : folder where JSON and PDF files are saved
     provider    : 'anthropic', 'openai', or 'gemini'
     api_key     : API key for the chosen provider
     model       : model name (uses provider default if None)
     progress_cb : optional callable(str) for progress messages
 
-    Returns a list of recipe dicts (one per recipe found in the image).
+    Returns a list of PDF paths created (one per recipe found in the image).
     Raises on API / import errors.
     """
     def log(msg):
@@ -234,4 +294,12 @@ def extract_recipes_from_image(image_path, provider, api_key, model=None, progre
     log(f"  Sending to {p['name']} ({model})...")
     recipes = p['_fn'](image_path, api_key, model)
     log(f"  Extracted {len(recipes)} recipe(s) from image")
-    return recipes
+
+    pdf_paths = []
+    for recipe in recipes:
+        name = recipe.get('name', 'Unknown Recipe')
+        pdf_path = _recipe_to_pdf(recipe, output_dir)
+        log(f"  Saved: {os.path.basename(pdf_path)}")
+        pdf_paths.append(pdf_path)
+
+    return pdf_paths

@@ -22,55 +22,17 @@ try:
 except Exception:
     _dnd_data = []
 
-# ── Optional LLM packages ─────────────────────────────────────────────────────
-# Each package is only bundled if it is already installed in the build environment.
-# Install whichever you want before running pyinstaller:
-#   pip install anthropic                        (Claude / Anthropic)
-#   pip install openai                           (GPT-4o / OpenAI)
-#   pip install google-generativeai Pillow       (Gemini / Google)
+# ── LLM packages (always bundled) ────────────────────────────────────────────
+# build.bat installs all of these before pyinstaller runs.
 
-_llm_hidden = []
-_llm_collect_all = []
-
-try:
-    import anthropic        # noqa: F401
-    _llm_hidden += [
-        'anthropic', 'anthropic.resources', 'anthropic._streaming',
-        'httpx', 'httpcore', 'anyio', 'sniffio',
-    ]
-    _llm_collect_all.append('anthropic')
-    print('[spec] anthropic detected — will be bundled')
-except ImportError:
-    print('[spec] anthropic NOT installed — Claude provider will be unavailable in exe')
-
-try:
-    import openai           # noqa: F401
-    _llm_hidden += [
-        'openai', 'openai.resources', 'openai._streaming',
-        'httpx', 'httpcore', 'anyio', 'sniffio',
-    ]
-    _llm_collect_all.append('openai')
-    print('[spec] openai detected — will be bundled')
-except ImportError:
-    print('[spec] openai NOT installed — GPT-4o provider will be unavailable in exe')
-
-try:
-    import google.generativeai  # noqa: F401
-    _llm_hidden += [
-        'google.generativeai', 'google.ai.generativelanguage_v1beta',
-        'google.auth', 'google.oauth2', 'grpc',
-    ]
-    _llm_collect_all += ['google.generativeai', 'grpc']
-    print('[spec] google-generativeai detected — will be bundled')
-except ImportError:
-    print('[spec] google-generativeai NOT installed — Gemini provider will be unavailable in exe')
-
-try:
-    import PIL              # noqa: F401
-    _llm_collect_all.append('PIL')
-    print('[spec] Pillow detected — will be bundled')
-except ImportError:
-    print('[spec] Pillow NOT installed — BMP support and Gemini provider will be unavailable in exe')
+_llm_hidden = [
+    'anthropic', 'anthropic.resources', 'anthropic._streaming',
+    'openai', 'openai.resources', 'openai._streaming',
+    'google.generativeai', 'google.ai.generativelanguage_v1beta',
+    'google.auth', 'google.oauth2', 'grpc',
+    'httpx', 'httpcore', 'anyio', 'sniffio',
+]
+_llm_collect_all = ['anthropic', 'openai', 'google.generativeai', 'grpc', 'PIL']
 
 a = Analysis(
     ['app.py'],
@@ -84,7 +46,7 @@ a = Analysis(
         'CreatePaprikaImport',
         'PDFToJSONRecipe',
         'RecipeFormatter',
-        'ImageToRecipeJSON',
+        'ImageToPDFRecipe',
         # tkinterdnd2
         'tkinterdnd2',
         'tkinterdnd2.TkinterDnD',

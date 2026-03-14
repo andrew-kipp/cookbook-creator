@@ -13,6 +13,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext
 from tkinter import ttk
 
+
 # Drag-and-drop support (optional)
 try:
     from tkinterdnd2 import TkinterDnD, DND_FILES
@@ -335,9 +336,11 @@ class App:
             return {}
 
     def _save_settings(self, data: dict):
+        # Never persist the API key — keep it in-memory only for this session.
+        to_save = {k: v for k, v in data.items() if k != 'llm_api_key'}
         try:
             with open(SETTINGS_FILE, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=2)
+                json.dump(to_save, f, indent=2)
         except Exception as e:
             messagebox.showerror("Settings Error", f"Could not save settings:\n{e}")
 
@@ -772,21 +775,15 @@ class App:
             return
 
         def task():
-            from ImageToRecipeJSON import extract_recipes_from_image
+            from ImageToPDFRecipe import extract_recipes_from_image
             total_recipes = 0
             for img_path in image_files:
                 self._log(f"Processing: {os.path.basename(img_path)}")
                 try:
-                    recipes = extract_recipes_from_image(
-                        img_path, provider, api_key, model, progress_cb=self._log
+                    pdfs = extract_recipes_from_image(
+                        img_path, folder, provider, api_key, model, progress_cb=self._log
                     )
-                    for recipe in recipes:
-                        name = recipe.get('name', 'Unknown Recipe')
-                        out  = os.path.join(folder, f"{name}.json")
-                        with open(out, 'w', encoding='utf-8') as f:
-                            json.dump(recipe, f, indent=2, ensure_ascii=False)
-                        self._log(f"  Saved: {os.path.basename(out)}")
-                        total_recipes += 1
+                    total_recipes += len(pdfs)
                 except Exception as e:
                     self._log(f"  Error: {e}")
             self._log(f"Done. {total_recipes} recipe(s) saved to: {folder}")
@@ -817,21 +814,15 @@ class App:
                 return
 
             self._log(f"Found {len(image_files)} image(s) in: {folder}")
-            from ImageToRecipeJSON import extract_recipes_from_image
+            from ImageToPDFRecipe import extract_recipes_from_image
             total_recipes = 0
             for img_path in sorted(image_files):
                 self._log(f"Processing: {img_path.name}")
                 try:
-                    recipes = extract_recipes_from_image(
-                        str(img_path), provider, api_key, model, progress_cb=self._log
+                    pdfs = extract_recipes_from_image(
+                        str(img_path), folder, provider, api_key, model, progress_cb=self._log
                     )
-                    for recipe in recipes:
-                        name = recipe.get('name', 'Unknown Recipe')
-                        out  = recipes_dir / f"{name}.json"
-                        with open(out, 'w', encoding='utf-8') as f:
-                            json.dump(recipe, f, indent=2, ensure_ascii=False)
-                        self._log(f"  Saved: {out.name}")
-                        total_recipes += 1
+                    total_recipes += len(pdfs)
                 except Exception as e:
                     self._log(f"  Error: {e}")
             self._log(f"Done. {total_recipes} recipe(s) saved to: {folder}")

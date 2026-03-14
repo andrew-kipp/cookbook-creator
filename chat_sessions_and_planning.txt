@@ -263,11 +263,13 @@ Further changes:
    of the 'Notes' section in the pdf recipe file.
 
 
+Hey Claude, following up from the last session, can you please update the app so that it has the packages 
+for the LLMs installed by default. I don't want the user to have to deal with that extra step. Also, can you 
+please make sure the API Key is deleted each time the app or executable file is closed? The API Key should 
+never be stored except for the current session of the app.
+
+
 Everything above this line has already been completed.
-
-
-LLM API component added, but still needs to be tested. Also confirm that API Key is not stored.
-
 
 
 Further To Do, but needs more planning.
@@ -277,8 +279,7 @@ Further To Do, but needs more planning.
   with the PDFs or the paprikarecipes file.
 - Remove the 'Create Recipe PDFs from Output Folder' button. Center the 'Create Recipe PDFs from Files' button.
 - Change the functions associated with the 'Create Paprikarecipes...' so that they only use PDF files.
-- Update the function for 'Create Recipe PDFs from Files' so that it can handle image files.
-   - For recipe screenshot / image handling, ask the user for thier prefered LLM of the set ['ChatGPT', 'Gemini', 'Claude']. Based on 
+
 
 - Want to pretty-up the formatting of the recipe without messing with the page sizing and spacing too 
   much. Make this optional or let the app user decide what the pretty formatting should be?

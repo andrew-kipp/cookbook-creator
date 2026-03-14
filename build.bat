@@ -5,7 +5,7 @@ REM  Produces: dist\RecipeAndCookbookCreator.exe
 REM ─────────────────────────────────────────────────────────────────────────
 
 echo Installing / updating dependencies...
-pip install tkinterdnd2 reportlab requests PyMuPDF pyinstaller --quiet
+pip install tkinterdnd2 reportlab requests PyMuPDF pyinstaller anthropic openai google-generativeai Pillow --quiet
 
 echo.
 echo Building executable...
