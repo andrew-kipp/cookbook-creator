@@ -286,6 +286,13 @@ Place the Nutritional Information into the same grouping as the Directions and N
 separate section. Right now it is separated and placed on the second page, but it should be placed right 
 below the Notes section.
 
+For the LLM extraction process, after creating the json file, use the recipe name and source, if available, 
+to search google for a recipe webpage. If there is no source then only use the recipe name but limit the 
+websites to [bonappetit.com, epicurious.com, cooking.nytimes.com]. Store the url for the webpage in the 
+'source_url' key in the json file. Only store the value if the recipe title is an exact match.
+From the webpage, determine the image url for the associated recipe image and store that value in the 
+'image_url' key in the json file.
+
 Everything above this line has already been completed.
 
 
@@ -310,8 +317,9 @@ Further To Do, but needs more planning.
       numbered page.
    d. 
 
+#. Need to update the LLM Recipe Extraction to also extract the recipe food image if it exists in each recipe.
 #. Want to pretty-up the formatting of the recipe without messing with the page sizing and spacing too 
-  much. Make this optional or let the app user decide what the pretty formatting should be?
+   much. Make this optional or let the app user decide what the pretty formatting should be?
 #. Include an index, but need to determine how to sort things.
 #. Need to do some pre-emptory formatting adjustments so that any two-page recipes aren't printed on the 
-  front and back of one page. Want to be able to see the whole recipe at once without flipping pages.
+   front and back of one page. Want to be able to see the whole recipe at once without flipping pages.

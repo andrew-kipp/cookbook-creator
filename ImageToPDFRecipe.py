@@ -8,9 +8,11 @@ more than one recipe.
 """
 
 import base64
+import html as _html_mod
 import json
 import os
 import re
+import urllib.parse
 from pathlib import Path
 
 from reportlab.lib.pagesizes import letter
@@ -27,6 +29,29 @@ from RecipeFormatter import (
 # Image file extensions accepted by the app
 SUPPORTED_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'}
 IMAGES_SUBDIR = "Recipe Images"
+
+# Sites searched when no source is known
+FALLBACK_SITES = ['bonappetit.com', 'epicurious.com', 'cooking.nytimes.com']
+
+# Maps common source name variants to a site key
+SOURCE_SITE_MAP = {
+    'bon appétit':            'bonappetit.com',
+    'bon appetit':            'bonappetit.com',
+    'bonappetit':             'bonappetit.com',
+    'epicurious':             'epicurious.com',
+    'nyt cooking':            'cooking.nytimes.com',
+    'nytimes cooking':        'cooking.nytimes.com',
+    'new york times cooking': 'cooking.nytimes.com',
+    'nyt':                    'cooking.nytimes.com',
+}
+
+_SEARCH_HEADERS = {
+    'User-Agent': (
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+        'AppleWebKit/537.36 (KHTML, like Gecko) '
+        'Chrome/91.0.4472.124 Safari/537.36'
+    )
+}
 
 # ── Extraction prompt ─────────────────────────────────────────────────────────
 
@@ -111,6 +136,127 @@ def _parse_json_response(text: str) -> list:
     if isinstance(recipes, dict):
         recipes = [recipes]
     return recipes
+
+
+def _og_data(url: str) -> tuple:
+    """Fetch a webpage and return (og_title, og_image_url), HTML-entities unescaped."""
+    import requests
+    try:
+        resp = requests.get(url, headers=_SEARCH_HEADERS, timeout=10)
+        resp.raise_for_status()
+        page = resp.text
+
+        def _meta(prop):
+            m = re.search(
+                rf'<meta[^>]+property=["\']og:{prop}["\'][^>]+content=["\']([^"\']+)', page
+            )
+            if not m:
+                m = re.search(
+                    rf'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:{prop}["\']', page
+                )
+            return _html_mod.unescape(m.group(1).strip()) if m else ''
+
+        title = _meta('title')
+        if not title:
+            m2 = re.search(r'<title[^>]*>(.*?)</title>', page, re.IGNORECASE | re.DOTALL)
+            title = _html_mod.unescape(m2.group(1).strip()) if m2 else ''
+
+        return title, _meta('image')
+    except Exception:
+        return '', ''
+
+
+def _search_bonappetit(name: str) -> list:
+    """Return up to 3 Bon Appétit recipe URLs matching the search term."""
+    import requests
+    q = urllib.parse.quote_plus(name)
+    r = requests.get(f'https://www.bonappetit.com/search?q={q}',
+                     headers=_SEARCH_HEADERS, timeout=10)
+    r.raise_for_status()
+    slugs = re.findall(r'href="(/recipe/[^"]+)"', r.text)
+    seen, urls = set(), []
+    for s in slugs:
+        if s not in seen:
+            seen.add(s)
+            urls.append(f'https://www.bonappetit.com{s}')
+    return urls[:3]
+
+
+def _search_epicurious(name: str) -> list:
+    """Return up to 3 Epicurious recipe URLs matching the search term."""
+    import requests
+    q = urllib.parse.quote_plus(name)
+    r = requests.get(f'https://www.epicurious.com/search?q={q}',
+                     headers=_SEARCH_HEADERS, timeout=10)
+    if r.status_code != 200:
+        return []
+    slugs = re.findall(r'href="(/recipes/food/views/[^"?]+)"', r.text)
+    seen, urls = set(), []
+    for s in slugs:
+        if s not in seen:
+            seen.add(s)
+            urls.append(f'https://www.epicurious.com{s}')
+    return urls[:3]
+
+
+def _search_nyt_cooking(name: str) -> list:
+    """Return up to 3 NYT Cooking recipe URLs matching the search term."""
+    import requests
+    q = urllib.parse.quote_plus(name)
+    r = requests.get(f'https://cooking.nytimes.com/search?q={q}',
+                     headers=_SEARCH_HEADERS, timeout=10)
+    r.raise_for_status()
+    paths = re.findall(r'"/recipes/(\d+-[^?"]+)', r.text)
+    seen, urls = set(), []
+    for p in paths:
+        if p not in seen:
+            seen.add(p)
+            urls.append(f'https://cooking.nytimes.com/recipes/{p}')
+    return urls[:3]
+
+
+_SITE_SEARCH = {
+    'bonappetit.com':      _search_bonappetit,
+    'epicurious.com':      _search_epicurious,
+    'cooking.nytimes.com': _search_nyt_cooking,
+}
+
+
+def _enrich_recipe_with_web_data(recipe_data: dict, log=print) -> None:
+    """
+    Search each recipe site for the recipe's webpage; fill in source_url and
+    image_url.  Only stores source_url when the recipe title is an exact match
+    (case-insensitive) in the page title.  Modifies recipe_data in-place.
+    """
+    name   = (recipe_data.get('name') or '').strip()
+    source = (recipe_data.get('source') or '').strip()
+    if not name:
+        return
+
+    # Pick which sites to try
+    matched_site = SOURCE_SITE_MAP.get(source.lower()) if source else None
+    sites = [matched_site] if matched_site else FALLBACK_SITES
+
+    log(f"  Searching for recipe webpage: {name}")
+    for site in sites:
+        fn = _SITE_SEARCH.get(site)
+        if not fn:
+            continue
+        try:
+            urls = fn(name)
+        except Exception:
+            continue
+        for url in urls:
+            og_title, og_image = _og_data(url)
+            if name.lower() in og_title.lower():
+                recipe_data['source_url'] = url
+                log(f"  Matched on {site}: {url}")
+                if og_image:
+                    recipe_data['image_url'] = og_image
+                    log(f"  Image URL captured")
+                return
+
+    log(f"  No exact match found for: {name}")
 
 
 def _recipe_to_pdf(recipe_data: dict, output_dir: str) -> str:
@@ -297,7 +443,7 @@ def extract_recipes_from_image(image_path, output_dir, provider, api_key, model=
 
     pdf_paths = []
     for recipe in recipes:
-        name = recipe.get('name', 'Unknown Recipe')
+        _enrich_recipe_with_web_data(recipe, log=log)
         pdf_path = _recipe_to_pdf(recipe, output_dir)
         log(f"  Saved: {os.path.basename(pdf_path)}")
         pdf_paths.append(pdf_path)
