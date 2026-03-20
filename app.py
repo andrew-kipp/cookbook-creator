@@ -48,11 +48,25 @@ def _fix_stdout():
         pass
 
 
+# ── Category ordering for cookbook ────────────────────────────────────────────
+CATEGORY_ORDER = [
+    "Appetizers/Starters",
+    "Mains",
+    "Sides",
+    "Desserts",
+    "Breads",
+    "Sauces/Toppings",
+    "Drinks",
+]
+_TOC_MISC_CHILDREN = {"Breads", "Sauces/Toppings", "Drinks"}
+
+
 # ── Cookbook generator ────────────────────────────────────────────────────────
 
 def create_cookbook(recipes_dir, output_path, filter_mode="all", image_mode="none", progress_cb=None):
     """
-    Generate a single multi-page PDF cookbook from JSON recipe files.
+    Generate a structured multi-page PDF cookbook with cover page, table of contents,
+    per-category sections, and an alphabetical index.
 
     recipes_dir  : folder containing .json recipe files (and a Recipe Images subfolder)
     output_path  : full path for the output PDF
@@ -61,14 +75,16 @@ def create_cookbook(recipes_dir, output_path, filter_mode="all", image_mode="non
     progress_cb  : optional callable(str)
     """
     from reportlab.lib.pagesizes import letter
-    from reportlab.platypus import SimpleDocTemplate, PageBreak
+    from reportlab.lib.units import inch
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+    from reportlab.lib import colors
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.platypus import (
+        SimpleDocTemplate, PageBreak, Spacer, Paragraph, Table, TableStyle, Image
+    )
     from RecipeFormatter import (
-        get_recipe_styles,
-        format_recipe_first_page,
-        format_recipe_second_page,
-        LEFT_RIGHT_MARGIN,
-        PAGE_TOP_MARGIN,
-        PAGE_BOTTOM_MARGIN,
+        get_recipe_styles, format_recipe_first_page, format_recipe_second_page,
+        LEFT_RIGHT_MARGIN, PAGE_TOP_MARGIN, PAGE_BOTTOM_MARGIN, _safe,
     )
 
     def log(msg):
@@ -81,9 +97,11 @@ def create_cookbook(recipes_dir, output_path, filter_mode="all", image_mode="non
 
     recipes_dir = Path(recipes_dir)
     images_dir  = recipes_dir / IMAGES_SUBDIR
+    page_w, page_h = letter
+    usable_w = page_w - 2 * LEFT_RIGHT_MARGIN
 
+    # ── Filter helpers ────────────────────────────────────────────────────────
     def _base_stem(stem):
-        """Strip trailing '(N Stars)' from a filename stem."""
         return _re.sub(r'\s*\(\d+\s*Stars?\)\s*$', '', stem, flags=_re.IGNORECASE).strip()
 
     def _rating_from_pdf(stem):
@@ -96,14 +114,13 @@ def create_cookbook(recipes_dir, output_path, filter_mode="all", image_mode="non
             return r >= 5
         if filter_mode == "4_and_5_stars":
             return r >= 4
-        return True  # "all"
+        return True
 
-    # Collect JSON recipes
+    # ── Collect and filter recipes ────────────────────────────────────────────
     json_files = sorted(recipes_dir.glob("*.json"))
     json_stems = {jf.stem for jf in json_files}
     log(f"Found {len(json_files)} JSON file(s)")
 
-    # Collect PDF-only recipes (no matching JSON)
     pdf_only = sorted(
         pdf for pdf in recipes_dir.glob("*.pdf")
         if _base_stem(pdf.stem) not in json_stems
@@ -111,9 +128,7 @@ def create_cookbook(recipes_dir, output_path, filter_mode="all", image_mode="non
     if pdf_only:
         log(f"Found {len(pdf_only)} PDF-only recipe(s)")
 
-    # Apply filter and build recipe list
     filtered = []
-
     for jf in json_files:
         try:
             with open(jf, encoding='utf-8') as f:
@@ -135,75 +150,437 @@ def create_cookbook(recipes_dir, output_path, filter_mode="all", image_mode="non
             log(f"  Warning: could not extract {pdf.name}: {e}")
 
     filtered.sort(key=lambda x: x[0].stem.lower())
-
     log(f"Recipes after filter '{filter_mode}': {len(filtered)}")
     if not filtered:
         log("No recipes match the selected filter. Cookbook not created.")
         return
 
-    styles = get_recipe_styles()
+    # ── Build category index ──────────────────────────────────────────────────
+    all_cat_map = {}   # cat -> [(jf, data), ...]
+    uncategorized = []
+    for jf, data in filtered:
+        cats = data.get('categories', [])
+        if isinstance(cats, str):
+            cats = [c.strip() for c in cats.split(',') if c.strip()]
+        if not cats:
+            uncategorized.append((jf, data))
+            continue
+        for cat in cats:
+            if cat:
+                all_cat_map.setdefault(cat, []).append((jf, data))
 
-    # Build the full story
-    story = []
+    # recipe_index.json: all categories → sorted recipe name lists
+    recipe_index = {
+        cat: sorted(set(d.get('name', jf.stem) for jf, d in items))
+        for cat, items in sorted(all_cat_map.items())
+    }
+    if uncategorized:
+        recipe_index['Uncategorized'] = sorted(
+            set(d.get('name', jf.stem) for jf, d in uncategorized)
+        )
+    with open(recipes_dir / "recipe_index.json", 'w', encoding='utf-8') as f:
+        json.dump(recipe_index, f, indent=2, ensure_ascii=False)
+    log("Recipe index saved: recipe_index.json")
+
+    # ── Per-category recipe lists, deduplicated (first occurrence wins) ───────
+    seen_names = set()
+    cat_recipe_lists = {}
+    for cat in CATEGORY_ORDER:
+        deduped = []
+        for jf, data in all_cat_map.get(cat, []):
+            name = data.get('name', jf.stem)
+            if name not in seen_names:
+                seen_names.add(name)
+                deduped.append((jf, data))
+        if deduped:
+            cat_recipe_lists[cat] = deduped
+
+    active_cats = [c for c in CATEGORY_ORDER if c in cat_recipe_lists]
+    log(f"Categories: {active_cats}")
+
+    # ── Styles ────────────────────────────────────────────────────────────────
+    recipe_styles = get_recipe_styles()
+    base_styles   = getSampleStyleSheet()
+
+    def _ps(name, **kw):
+        return ParagraphStyle(name, parent=base_styles['Normal'], **kw)
+
+    cover_title_style   = _ps('CoverTitle', fontSize=36, fontName='Helvetica-Bold',
+                               textColor=colors.HexColor('#2C3E50'),
+                               alignment=TA_CENTER, spaceAfter=18)
+    cover_sub_style     = _ps('CoverSub', fontSize=18,
+                               textColor=colors.HexColor('#7F8C8D'),
+                               alignment=TA_CENTER, spaceAfter=8)
+    toc_heading_style   = _ps('TOCHeading', fontSize=24, fontName='Helvetica-Bold',
+                               textColor=colors.HexColor('#2C3E50'),
+                               alignment=TA_CENTER, spaceAfter=14)
+    toc_cat_style       = _ps('TOCCat', fontSize=13,
+                               textColor=colors.HexColor('#2C3E50'),
+                               spaceBefore=4, spaceAfter=2)
+    toc_cat_pg_style    = _ps('TOCCatPg', fontSize=13,
+                               textColor=colors.HexColor('#2C3E50'),
+                               alignment=TA_RIGHT, spaceBefore=4, spaceAfter=2)
+    toc_sub_style       = _ps('TOCSub', fontSize=11,
+                               textColor=colors.HexColor('#555555'),
+                               spaceBefore=2, spaceAfter=2,
+                               leftIndent=int(0.3 * inch))
+    toc_sub_pg_style    = _ps('TOCSubPg', fontSize=11,
+                               textColor=colors.HexColor('#555555'),
+                               alignment=TA_RIGHT, spaceBefore=2, spaceAfter=2)
+    cat_title_style     = _ps('CatTitle', fontSize=28, fontName='Helvetica-Bold',
+                               textColor=colors.HexColor('#2C3E50'),
+                               alignment=TA_CENTER, spaceAfter=14)
+    cat_recipe_style    = _ps('CatRecipe', fontSize=12,
+                               textColor=colors.HexColor('#2C3E50'),
+                               spaceAfter=3, leftIndent=int(0.2 * inch))
+    cat_recipe_pg_style = _ps('CatRecipePg', fontSize=12,
+                               textColor=colors.HexColor('#7F8C8D'),
+                               alignment=TA_RIGHT)
+    idx_heading_style   = _ps('IdxHeading', fontSize=24, fontName='Helvetica-Bold',
+                               textColor=colors.HexColor('#2C3E50'),
+                               alignment=TA_CENTER, spaceAfter=14)
+    idx_cat_style       = _ps('IdxCat', fontSize=12, fontName='Helvetica-Bold',
+                               textColor=colors.HexColor('#2C3E50'),
+                               spaceBefore=8, spaceAfter=3)
+    idx_recipe_style    = _ps('IdxRecipe', fontSize=10,
+                               textColor=colors.HexColor('#2C3E50'),
+                               spaceAfter=2, leftIndent=int(0.3 * inch))
+    img_caption_style   = _ps('ImgCaption', fontSize=7, alignment=TA_CENTER)
+
+    # ── Image lookup ──────────────────────────────────────────────────────────
     include_image = image_mode in ("grouped", "adjacent")
 
-    for idx, (jf, recipe_data) in enumerate(filtered):
-        recipe_name = recipe_data.get('name', _base_stem(jf.stem))
-        rating = recipe_data.get('rating', '')
-        log(f"  Adding ({idx+1}/{len(filtered)}): {recipe_name}")
+    def _find_image(data):
+        if not include_image:
+            return None
+        recipe_name = data.get('name', '')
+        rating      = data.get('rating', '')
+        safe = "".join(c for c in recipe_name if c.isalnum() or c in (' ', '_', '-')).strip()
+        suffix = f" ({rating} stars)" if rating not in (None, '') else ""
+        for ext in ('.jpg', '.jpeg', '.png', '.gif', '.webp'):
+            p = images_dir / f"{safe}{suffix}{ext}"
+            if p.exists():
+                return str(p)
+        if images_dir.exists():
+            for f in images_dir.iterdir():
+                if f.is_file() and f.stem.lower().startswith(safe.lower()):
+                    return str(f)
+        url = data.get('image_url', '')
+        if url:
+            try:
+                from JSONToPDFRecipe import download_recipe_image
+                images_dir.mkdir(parents=True, exist_ok=True)
+                dl = download_recipe_image(url, recipe_name, str(images_dir), rating or None)
+                if dl:
+                    return dl
+            except Exception:
+                pass
+        return None
 
-        # Find associated image
-        image_path = None
-        if include_image:
-            safe_name = "".join(c for c in recipe_name if c.isalnum() or c in (' ', '_', '-')).strip()
-            suffix_str = f" ({rating} stars)" if rating not in (None, '') else ""
-            for ext in ('.jpg', '.jpeg', '.png', '.gif', '.webp'):
-                candidate = images_dir / f"{safe_name}{suffix_str}{ext}"
-                if candidate.exists():
-                    image_path = str(candidate)
-                    break
-            if not image_path:
-                # Prefix match fallback
-                for f in images_dir.iterdir() if images_dir.exists() else []:
-                    if f.is_file() and f.stem.lower().startswith(safe_name.lower()):
-                        image_path = str(f)
-                        break
+    # ── Pre-measure recipes: base_pages (overflow check) + total_pages ────────
+    log("Pre-measuring recipes...")
+    recipe_cache = {}  # id(data) -> {'image': str|None, 'base_pages': int, 'total_pages': int}
+    for cat in active_cats:
+        for jf, data in cat_recipe_lists[cat]:
+            key = id(data)
+            if key in recipe_cache:
+                continue
+            img = _find_image(data)
+            try:
+                _, oi, orr, _ = format_recipe_first_page(data, recipe_styles)
+                has_overflow = bool(oi or orr)
+            except Exception:
+                has_overflow = False
+            base_pages  = 2 if has_overflow else 1
+            total_pages = base_pages + (1 if image_mode == "adjacent" and img else 0)
+            recipe_cache[key] = {'image': img, 'base_pages': base_pages, 'total_pages': total_pages}
 
-            if not image_path:
-                # Try to download from image_url in the JSON
-                image_url = recipe_data.get('image_url', '')
-                if image_url:
-                    log(f"    No local image found; downloading from image_url...")
-                    try:
-                        from JSONToPDFRecipe import download_recipe_image
-                        images_dir.mkdir(parents=True, exist_ok=True)
-                        downloaded = download_recipe_image(
-                            image_url, recipe_name, str(images_dir), rating or None
-                        )
-                        if downloaded:
-                            image_path = downloaded
-                            log(f"    Downloaded image: {os.path.basename(downloaded)}")
-                        else:
-                            log(f"    Could not download image for: {recipe_name}")
-                    except Exception as e:
-                        log(f"    Image download failed for {recipe_name}: {e}")
+    # ── Pass 1: simulate page layout to get page numbers for TOC ─────────────
+    # Pre-section pages: cover(1) blank(2) TOC(3) blank(4) → categories start at 5
+    p = 5
 
-        first_page_elements, overflow_ingredients, overflow_right, overflow_directions_count = \
-            format_recipe_first_page(recipe_data, styles)
-        story.extend(first_page_elements)
+    def _p1_ensure_odd():
+        nonlocal p
+        if p % 2 == 0:
+            p += 1
 
-        second_page_elements = format_recipe_second_page(
-            recipe_data, image_path, styles,
-            overflow_ingredients, overflow_right, overflow_directions_count,
-            include_image=include_image,
-        )
-        story.extend(second_page_elements)
+    def _p1_ensure_even():
+        nonlocal p
+        if p % 2 != 0:
+            p += 1
 
-        # Add page break between recipes (not after the last one)
-        if idx < len(filtered) - 1:
-            story.append(PageBreak())
+    cat_start_pages    = {}  # cat -> page number
+    recipe_start_pages = {}  # id(data) -> page number
 
-    # Build the PDF
+    for cat in active_cats:
+        _p1_ensure_odd()
+        cat_start_pages[cat] = p
+        p += 1  # advance past category title page (via explicit PageBreak)
+
+        if image_mode == "grouped":
+            n_imgs = sum(1 for _, d in cat_recipe_lists[cat] if recipe_cache[id(d)]['image'])
+            if n_imgs:
+                p += (n_imgs + 11) // 12  # each image grid page has explicit PageBreak
+
+        # Reorder: when a 2-page recipe would land on an odd page, swap it with
+        # the next recipe (if the next is 1-page) to avoid inserting a blank page.
+        items = list(cat_recipe_lists[cat])
+        i = 0
+        while i < len(items):
+            info = recipe_cache[id(items[i][1])]
+            bp  = info['base_pages']
+            img = info['image']
+            tp  = info['total_pages']
+            if tp == 2 and p % 2 != 0:
+                # Try swapping with the next recipe if it is a 1-page recipe
+                if i + 1 < len(items) and recipe_cache[id(items[i + 1][1])]['total_pages'] == 1:
+                    items[i], items[i + 1] = items[i + 1], items[i]
+                    info = recipe_cache[id(items[i][1])]
+                    bp, img, tp = info['base_pages'], info['image'], info['total_pages']
+                else:
+                    p += 1  # fallback: blank page when no swappable neighbour
+            recipe_start_pages[id(items[i][1])] = p
+            is_last = (i == len(items) - 1)
+            # Page advances for this recipe slot:
+            #   (bp-1) = PageBreak from format_recipe_second_page when overflow
+            #   +1     = explicit _pb() for adjacent image page (if applicable)
+            #   +1     = explicit _pb() separator between recipes (if not last)
+            advances = (bp - 1) + (1 if image_mode == "adjacent" and img else 0) + (0 if is_last else 1)
+            p += advances
+            i += 1
+        cat_recipe_lists[cat] = items  # store reordered list for pass 2
+
+        p += 1  # blank page after last recipe in category (explicit _pb())
+
+    _p1_ensure_odd()
+    index_start_page = p
+    log(f"Index will start on page {index_start_page}")
+
+    # ── TOC row builder ───────────────────────────────────────────────────────
+    def _toc_row(label, pg_num, lbl_style, pg_style, left_indent=0):
+        lbl_para = Paragraph(label, lbl_style)
+        pg_para  = Paragraph(str(pg_num), pg_style)
+        t = Table([[lbl_para, pg_para]],
+                  colWidths=[usable_w - 0.6 * inch, 0.6 * inch])
+        t.setStyle(TableStyle([
+            ('VALIGN',        (0, 0), (-1, -1), 'TOP'),
+            ('LEFTPADDING',   (0, 0), (-1, -1), left_indent),
+            ('RIGHTPADDING',  (0, 0), (-1, -1), 0),
+            ('TOPPADDING',    (0, 0), (-1, -1), 2),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+        ]))
+        return t
+
+    # ── Pass 2: build story ───────────────────────────────────────────────────
+    story = []
+    cur_page = [1]  # tracks which page we are currently writing content to
+
+    def _pb():
+        """Add an explicit PageBreak and advance the page counter."""
+        story.append(PageBreak())
+        cur_page[0] += 1
+
+    def _ensure_odd():
+        if cur_page[0] % 2 == 0:
+            _pb()
+
+    def _ensure_even():
+        if cur_page[0] % 2 != 0:
+            _pb()
+
+    # ── Cover page (page 1) ───────────────────────────────────────────────────
+    story.append(Spacer(1, page_h * 0.30))
+    story.append(Paragraph("Family Recipes", cover_title_style))
+    story.append(Spacer(1, 0.5 * inch))
+    story.append(Paragraph("From the Kipp/Paul Household", cover_sub_style))
+
+    # ── Blank page (page 2) ───────────────────────────────────────────────────
+    _pb()
+
+    # ── Table of Contents (page 3) ────────────────────────────────────────────
+    _pb()
+    story.append(Paragraph("Table of Contents", toc_heading_style))
+    story.append(Spacer(1, 0.15 * inch))
+
+    non_misc_cats  = [c for c in active_cats if c not in _TOC_MISC_CHILDREN]
+    misc_cats_active = [c for c in ["Breads", "Sauces/Toppings", "Drinks"] if c in cat_start_pages]
+
+    for cat in non_misc_cats:
+        story.append(_toc_row(cat, cat_start_pages[cat], toc_cat_style, toc_cat_pg_style))
+    if misc_cats_active:
+        story.append(Paragraph("Misc", _ps('TOCMisc', fontSize=13,
+                                           textColor=colors.HexColor('#2C3E50'),
+                                           spaceBefore=2, spaceAfter=2)))
+        for mc in misc_cats_active:
+            story.append(_toc_row(mc, cat_start_pages[mc],
+                                  toc_sub_style, toc_sub_pg_style,
+                                  left_indent=12))
+    story.append(_toc_row("Index", index_start_page, toc_cat_style, toc_cat_pg_style))
+
+    # ── Blank page (page 4) ───────────────────────────────────────────────────
+    _pb()
+
+    # ── Category sections ─────────────────────────────────────────────────────
+    for cat in active_cats:
+        items = cat_recipe_lists[cat]
+
+        # Category title page must be on an odd page
+        _ensure_odd()
+
+        # Category title
+        story.append(Spacer(1, page_h * 0.20))
+        story.append(Paragraph(_safe(cat), cat_title_style))
+        story.append(Spacer(1, 0.2 * inch))
+
+        # List every recipe with its page number
+        for jf, data in items:
+            rname = data.get('name', _base_stem(jf.stem))
+            rpage = recipe_start_pages.get(id(data), '?')
+            row = Table(
+                [[Paragraph(_safe(rname), cat_recipe_style),
+                  Paragraph(str(rpage), cat_recipe_pg_style)]],
+                colWidths=[usable_w - 0.5 * inch, 0.5 * inch]
+            )
+            row.setStyle(TableStyle([
+                ('VALIGN',        (0, 0), (-1, -1), 'TOP'),
+                ('LEFTPADDING',   (0, 0), (-1, -1), 0),
+                ('RIGHTPADDING',  (0, 0), (-1, -1), 0),
+                ('TOPPADDING',    (0, 0), (-1, -1), 1),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 1),
+            ]))
+            story.append(row)
+
+        _pb()  # end category title page → advances to next page
+
+        # Grouped images: 3-column × 4-row grid pages after category title
+        if image_mode == "grouped":
+            imgs_data = [
+                (data.get('name', jf.stem), recipe_cache[id(data)]['image'])
+                for jf, data in items
+                if recipe_cache[id(data)]['image']
+            ]
+            if imgs_data:
+                COLS, ROWS = 3, 4
+                per_page   = COLS * ROWS
+                img_w = (usable_w - (COLS - 1) * 0.1 * inch) / COLS
+                img_h = img_w * 0.75
+                for pi in range(0, len(imgs_data), per_page):
+                    batch = list(imgs_data[pi:pi + per_page])
+                    while len(batch) % COLS:
+                        batch.append(('', None))
+                    tbl_rows = []
+                    for ri in range(0, len(batch), COLS):
+                        cell_row = []
+                        for name, ipath in batch[ri:ri + COLS]:
+                            if ipath and os.path.exists(ipath):
+                                try:
+                                    cell_row.append([
+                                        Image(ipath, width=img_w, height=img_h),
+                                        Paragraph(_safe(name), img_caption_style),
+                                    ])
+                                except Exception:
+                                    cell_row.append([Paragraph(_safe(name), img_caption_style)])
+                            else:
+                                cell_row.append([Spacer(img_w, img_h)])
+                        tbl_rows.append(cell_row)
+                    tbl = Table(tbl_rows, colWidths=[img_w] * COLS)
+                    tbl.setStyle(TableStyle([
+                        ('VALIGN',        (0, 0), (-1, -1), 'TOP'),
+                        ('ALIGN',         (0, 0), (-1, -1), 'CENTER'),
+                        ('LEFTPADDING',   (0, 0), (-1, -1), 4),
+                        ('RIGHTPADDING',  (0, 0), (-1, -1), 4),
+                        ('TOPPADDING',    (0, 0), (-1, -1), 4),
+                        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+                    ]))
+                    story.append(tbl)
+                    _pb()
+
+        # Recipes
+        for idx_r, (jf, data) in enumerate(items):
+            info       = recipe_cache[id(data)]
+            bp         = info['base_pages']
+            image_path = info['image']
+            tp         = info['total_pages']
+            recipe_name = data.get('name', _base_stem(jf.stem))
+            log(f"  Adding: {recipe_name}")
+
+            # 2-page recipes start on even pages; the list was pre-reordered in
+            # pass 1 to avoid blank pages via swaps — this is a safety fallback.
+            if tp == 2:
+                _ensure_even()
+
+            # Render recipe page 1
+            first_elems, oi, orr, odirs = format_recipe_first_page(data, recipe_styles)
+            story.extend(first_elems)
+
+            # Render page 2 if there is overflow
+            if bp == 2:
+                second_elems = format_recipe_second_page(
+                    data, None, recipe_styles, oi, orr, odirs, include_image=False,
+                )
+                story.extend(second_elems)
+                # format_recipe_second_page always prepends a PageBreak
+                cur_page[0] += 1
+
+            # Adjacent image: its own page after the recipe
+            if image_mode == "adjacent" and image_path:
+                _pb()
+                try:
+                    from PIL import Image as PILImage
+                    with PILImage.open(image_path) as pil_img:
+                        iw, ih = pil_img.size
+                    max_w = usable_w
+                    max_h = page_h - PAGE_TOP_MARGIN - PAGE_BOTTOM_MARGIN - 0.5 * inch
+                    scale = min(max_w / iw, max_h / ih)
+                    story.append(Spacer(1, max(0, (max_h - ih * scale) / 2)))
+                    story.append(Image(image_path, width=iw * scale, height=ih * scale))
+                except Exception:
+                    story.append(Image(image_path, width=usable_w, height=4 * inch))
+
+            # Separator between recipes (not after last)
+            if idx_r < len(items) - 1:
+                _pb()
+
+        # Blank separator page after the last recipe in this category
+        _pb()
+
+    # ── Index ─────────────────────────────────────────────────────────────────
+    # Build recipe-name → start-page lookup from the (reordered) category lists
+    name_to_page = {}
+    for cat in active_cats:
+        for jf, data in cat_recipe_lists[cat]:
+            name = data.get('name', _base_stem(jf.stem))
+            if name not in name_to_page and id(data) in recipe_start_pages:
+                name_to_page[name] = recipe_start_pages[id(data)]
+
+    idx_recipe_pg_style = _ps('IdxRecipePg', fontSize=10,
+                               textColor=colors.HexColor('#7F8C8D'),
+                               alignment=TA_RIGHT, spaceAfter=2)
+
+    def _idx_recipe_row(name, page_num):
+        name_para = Paragraph(f"• {_safe(name)}", idx_recipe_style)
+        pg_text   = str(page_num) if page_num is not None else ""
+        pg_para   = Paragraph(pg_text, idx_recipe_pg_style)
+        t = Table([[name_para, pg_para]],
+                  colWidths=[usable_w - 0.5 * inch, 0.5 * inch])
+        t.setStyle(TableStyle([
+            ('VALIGN',        (0, 0), (-1, -1), 'TOP'),
+            ('LEFTPADDING',   (0, 0), (-1, -1), 0),
+            ('RIGHTPADDING',  (0, 0), (-1, -1), 0),
+            ('TOPPADDING',    (0, 0), (-1, -1), 0),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+        ]))
+        return t
+
+    _ensure_odd()
+    story.append(Paragraph("Index", idx_heading_style))
+    story.append(Spacer(1, 0.15 * inch))
+    for cat in sorted(recipe_index.keys()):
+        story.append(Paragraph(_safe(cat), idx_cat_style))
+        for rname in sorted(recipe_index[cat]):
+            story.append(_idx_recipe_row(rname, name_to_page.get(rname)))
+
+    # ── Build PDF ─────────────────────────────────────────────────────────────
     doc = SimpleDocTemplate(
         str(output_path),
         pagesize=letter,
@@ -212,7 +589,19 @@ def create_cookbook(recipes_dir, output_path, filter_mode="all", image_mode="non
         topMargin=PAGE_TOP_MARGIN,
         bottomMargin=PAGE_BOTTOM_MARGIN,
     )
-    doc.build(story)
+    def _draw_page_number(canvas, doc):
+        """Draw the page number in the bottom-right margin of every page."""
+        canvas.saveState()
+        canvas.setFont('Helvetica', 9)
+        canvas.setFillColorRGB(0.49, 0.53, 0.55)  # #7F8C8D
+        canvas.drawRightString(
+            page_w - LEFT_RIGHT_MARGIN,
+            PAGE_BOTTOM_MARGIN * 0.45,
+            str(doc.page),
+        )
+        canvas.restoreState()
+
+    doc.build(story, onFirstPage=_draw_page_number, onLaterPages=_draw_page_number)
     log(f"Cookbook saved: {output_path}")
 
 

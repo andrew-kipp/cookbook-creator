@@ -293,16 +293,25 @@ websites to [bonappetit.com, epicurious.com, cooking.nytimes.com]. Store the url
 From the webpage, determine the image url for the associated recipe image and store that value in the 
 'image_url' key in the json file.
 
-Everything above this line has already been completed.
+Hey Claude, in my cookbook-creator folder, when a user tries to create a cookbook but an image is missing 
+for a recipe, the process should check the associated .json file for that recipe and go through the 
+previously defined image download process
 
 
-Further To Do, but needs more planning.
-#. Cookbook contents formatting/organization:
+Hey Claude, following up from the last session. Please implement the To Do items listed below.
+
+To Do:
+1. As part of the cookbook creation, create a recipe index (.json) file of all the recipes, filtered by the 
+   filter button in the app. The keys in the dictionary should be the unique categories among all the 
+   recipes. The values for each key should be the list of recipes with that category tag. This will be used 
+   to determine which recipes go in which categories of the cookbook, and to create the cookbook index.
+2. Cookbook contents formatting/organization:
    a. Add a cover page with the main text 'Family Recipes' and sub text of 'From the Kipp/Paul Household'
-   b. Add a blank page after the title page and then add a table of contents on the third page. The table of 
+   b. Add a blank page after the cover page and then add a table of contents on the third page. The table of 
       contents should only contain the categories with the following layout. Include page numbers for the 
       categories with the category title page of 'Appetizers/Starters' being page number 1. Add a blank page 
-      after the table of contents page.
+      after the table of contents page. All category pages should be odd numbers and if they are not, 
+      increase the page number by 1.
       - Appetizers/Starters
       - Mains
       - Sides
@@ -311,15 +320,73 @@ Further To Do, but needs more planning.
         - Breads
         - Sauces/Toppings
         - Drinks
-   c. Add a title page for each category with the title of the category at the top and then all the recipes in the 
-      category listed below with their respective page number. Always add a blank page after the last recipe in a 
-      category and if necessary add an additional blank page so that the category title page is always on an odd 
-      numbered page.
-   d. 
+      - Index
+   c. To pupulate recipes in the cookbook:
+      1. Select only the keys from the recipe index which match the categories in the table of contents, 
+         excluding 'Index' and 'Misc' but including 'Breads', 'Sauces/Toppings', and 'Drinks'. From those 
+         keys, check if any recipes appear in more than one category and if yes, keep only the first 
+         occurance of that recipe.
+      2. For each category's list of recipes, check the number of pages for the recipe and the recipe 
+         position in the list. If a recipe is two pages then make sure its position in the list is an even 
+         number.
+   d. Add a title page for each category with the title of the category at the top and then all the recipes 
+      in the category listed below with their respective page number. Always add a blank page after the last 
+      recipe in a category and if necessary add an additional blank page so that the category title page is 
+      always on an odd numbered page. 
+   e. Add the index after the last recipe page in the book. If the index would start on an even numbered 
+      page, add a blank page before it so that the index starts on an even numbered page. The index should 
+      be created by sorting the keys in the recipes index file and sorting the list of recipes for each key.
+   f. For image formatting in the cookbook:
+      1. 'Grouped Images' - For each title page category, collect all images from the recipes in that 
+         category and create additional pages after the category title page to put the images. Those page 
+         should store the images in three columns by four rows with some spacing in between. Add the recipe 
+         title below each image. Scale the images as necessary but do not change the aspect ratio.
+      2. 'Image Adjacent to Recipe' - Add an additional page after each recipe page an insert the recipe 
+         image on that page. Increase the size of the image to fit the page, but do not change the image 
+         aspect ratio.
+      3. 'No Images' - Do not have any pages for images.
 
-#. Need to update the LLM Recipe Extraction to also extract the recipe food image if it exists in each recipe.
+Completed:
+1. Recipe index (.json) file creation — done as part of cookbook creation.
+2. Cookbook structure:
+   a. Cover page ("Family Recipes" / "From the Kipp/Paul Household") — done.
+   b. Blank page, TOC on page 3 with category page numbers, blank page — done.
+   c. Category sections with title pages listing recipes+page numbers — done.
+   d. 2-page recipes start on even pages — done.
+   e. Blank page after each category's last recipe — done.
+   f. Index page (alphabetical by category, then recipe) — done.
+   g. Image modes: Grouped (3×4 grid after category title), Adjacent (full-page after recipe), None — done.
+
+
+A few tweaks to make:
+1. Add three lines of space between the main title and the sub-title on the cover plage.
+2. Please adjust the 'Misc' category in the table of contents so that it does not have an extra space 
+   preceeding it. Also please reduce the indent of the subcategories under 'Misc' to only be indented by 
+   four spaces.
+3. For the 2-page recipes which start on even pages, can you please change this so that the 2-page recipe 
+   and the next recipe swap positional values, please? This removes the need for an additional white-space 
+   page to be added.
+
+Please update the index to add recipe page numbers next to the recipes. Please make the page numbers 
+right-justified, but keep the categories and recipes left-justified.
+
+
+Everything above this line has already been completed.
+
+
+Thoughts on future updates, but DO NOT DO YET.
+#. Do not include images for recipes which are two pages? Such as Chicago Deep Dish Pizza. However, some 
+   recipes barely take up a second page and the recipe could easily fit after the nutrition section....
+#. Image grid looks awful... leave it and make it pretier just in case or drop it entirely?
+#. Set a reminder for people to check images before using in the cookbook, especially for non- NYTCooking, 
+   Bon Appetit, and Epicurious recipes? The faces included in some mom blogs look creepy.
+#. Notify user if recipe image is missing?
+#. What to do if images only fill part of the page or need to be stretched too much?
+#. Make some kind of adjustment for pre-existing images in folder so that new ones aren't donwloaded. This 
+   way users and have their personal recipe images used when available.
 #. Want to pretty-up the formatting of the recipe without messing with the page sizing and spacing too 
-   much. Make this optional or let the app user decide what the pretty formatting should be?
-#. Include an index, but need to determine how to sort things.
-#. Need to do some pre-emptory formatting adjustments so that any two-page recipes aren't printed on the 
-   front and back of one page. Want to be able to see the whole recipe at once without flipping pages.
+   much. Make this optional or let the app user decide what the pretty formatting should be? May be done 
+   for future enhancements, but unnecessary now
+
+
+
