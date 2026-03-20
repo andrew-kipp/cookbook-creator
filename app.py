@@ -169,6 +169,25 @@ def create_cookbook(recipes_dir, output_path, filter_mode="all", image_mode="non
                         image_path = str(f)
                         break
 
+            if not image_path:
+                # Try to download from image_url in the JSON
+                image_url = recipe_data.get('image_url', '')
+                if image_url:
+                    log(f"    No local image found; downloading from image_url...")
+                    try:
+                        from JSONToPDFRecipe import download_recipe_image
+                        images_dir.mkdir(parents=True, exist_ok=True)
+                        downloaded = download_recipe_image(
+                            image_url, recipe_name, str(images_dir), rating or None
+                        )
+                        if downloaded:
+                            image_path = downloaded
+                            log(f"    Downloaded image: {os.path.basename(downloaded)}")
+                        else:
+                            log(f"    Could not download image for: {recipe_name}")
+                    except Exception as e:
+                        log(f"    Image download failed for {recipe_name}: {e}")
+
         first_page_elements, overflow_ingredients, overflow_right, overflow_directions_count = \
             format_recipe_first_page(recipe_data, styles)
         story.extend(first_page_elements)
